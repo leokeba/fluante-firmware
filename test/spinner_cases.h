@@ -1,0 +1,154 @@
+// The spinner (docs/DESIGN.md section 5.2) on TesserMotion's fake TMC2209:
+// the start, the ramp, the deadman, stopping and halts.
+#pragma once
+
+#include "rig.h"
+
+using fluante::Spinner;
+using State = fluante::Spinner::State;
+
+TEST(spinner_units) {
+    Rig r;
+    // 60 rpm of the sculpture through 54/60: 1.111 motor turns/s, 200 steps of
+    // 256 microsteps.
+    CHECK(near(r.spinner.microstepsPerSecond(60), 56888.9, 0.5));
+    CHECK(near(r.spinner.microstepsPerSecond(-60), -56888.9, 0.5));
+    r.spinner.settings.ratio = 1;
+    r.driver.settings.microsteps = 16;
+    CHECK(near(r.spinner.microstepsPerSecond(60), 3200, 0.01));
+}
+
+TEST(spinner_boots_stopped) {
+    Rig r;
+    CHECK(r.spinner.state() == State::Stopped);
+    CHECK(!r.driver.enabled());
+    CHECK_EQ(r.written(r22::vactual), 0u);
+}
+
+TEST(spinner_starts_settles_and_ramps) {
+    Rig r;
+    r.spinner.settings.speed = 60;
+    r.spinner.settings.acceleration = 30;
+    r.spinner.run(true);
+    r.tick();
+    CHECK(r.spinner.state() == State::Settling);
+    CHECK(r.driver.enabled());
+    r.tick();  // the enable's writes go first, within the tick's budget
+    CHECK_EQ(r.written(r22::pwm_ofs), 255u);
+    CHECK_EQ(r.written(r22::pwm_grad), 14u);
+    // PWMCONF's other bits kept: pwm_autoscale stays on.
+    CHECK_EQ(r.written(r22::pwm_autoscale), 1u);
+    CHECK_EQ(r.written(r22::toff), 3u);
+    r.run(0.88f);
+    CHECK(r.spinner.state() == State::Settling);
+    CHECK_EQ(r.vactual(), 0.0f);
+    r.run(0.2f);
+    CHECK(r.spinner.state() == State::Running);
+    // 1 s of ramp at 30 rpm/s.
+    float rpm = r.spinner.rpm();
+    CHECK(rpm < 6);
+    r.run(1);
+    CHECK(near(r.spinner.rpm(), rpm + 30, 0.01));
+    r.run(2);
+    CHECK_EQ(r.spinner.rpm(), 60.0f);
+    CHECK(near(r.vactual(), 56888.9f, 30));
+}
+
+TEST(spinner_outlives_the_deadman) {
+    Rig r;
+    r.spinner.settings.acceleration = 0;
+    r.spinner.run(true);
+    r.run(2);
+    CHECK(r.spinner.state() == State::Running);
+    r.run(5);  // five deadman times
+    CHECK(r.driver.velocity() != 0);
+    CHECK(r.vactual() > 0);
+}
+
+TEST(spinner_changes_speed_and_direction_on_a_ramp) {
+    Rig r;
+    r.spinner.settings.speed = 60;
+    r.spinner.settings.acceleration = 60;
+    r.spinner.run(true);
+    r.run(3);
+    CHECK_EQ(r.spinner.rpm(), 60.0f);
+    r.spinner.settings.speed = -60;
+    r.run(1);
+    CHECK(near(r.spinner.rpm(), 0, 1.5));
+    r.run(1.1f);
+    CHECK_EQ(r.spinner.rpm(), -60.0f);
+    CHECK(r.vactual() < 0);
+}
+
+TEST(spinner_stops_on_a_ramp) {
+    Rig r;
+    r.spinner.settings.speed = 60;
+    r.spinner.settings.acceleration = 60;
+    r.spinner.run(true);
+    r.run(3);
+    r.spinner.run(false);
+    r.tick();
+    CHECK(r.spinner.state() == State::Stopping);
+    CHECK(r.driver.enabled());
+    r.run(1.1f);
+    CHECK(r.spinner.state() == State::Stopped);
+    CHECK(!r.driver.enabled());
+    CHECK_EQ(r.spinner.rpm(), 0.0f);
+    CHECK_EQ(r.written(r22::toff), 0u);
+}
+
+TEST(spinner_halts_on_stop_all_and_keeps_running) {
+    Rig r;
+    r.spinner.run(true);
+    r.run(3);
+    r.motion.stopAll();
+    r.tick();
+    CHECK(r.spinner.state() == State::Halted);
+    CHECK(!r.driver.enabled());
+    CHECK(r.spinner.running());  // stored as it was
+    r.run(2);
+    CHECK(r.spinner.state() == State::Halted);
+    r.spinner.run(true);
+    r.tick();
+    CHECK(r.spinner.state() == State::Settling);
+}
+
+TEST(spinner_halts_when_disabled_underneath) {
+    Rig r;
+    r.spinner.run(true);
+    r.run(3);
+    CHECK(r.set("/driver/enabled", "false").status == tesser::Status::Ok);
+    r.tick();
+    CHECK(r.spinner.state() == State::Halted);
+    r.run(1);
+    CHECK(!r.driver.enabled());
+    CHECK(r.set("/spinner/running", "true").status == tesser::Status::Ok);
+    r.tick();
+    CHECK(r.spinner.state() == State::Settling);
+}
+
+TEST(spinner_waits_for_an_absent_driver) {
+    Rig r;
+    r.chip.powered = false;
+    r.run(1);
+    CHECK(!r.driver.present());
+    r.spinner.run(true);
+    r.tick();
+    CHECK(r.spinner.state() == State::Absent);
+    CHECK(!r.driver.enabled());
+    r.chip.powered = true;
+    r.run(3);  // found again within the driver's 2 s retry
+    CHECK(r.driver.present());
+    CHECK(r.spinner.state() == State::Settling || r.spinner.state() == State::Running);
+}
+
+TEST(spinner_halts_when_the_chip_resets) {
+    Rig r;
+    r.spinner.run(true);
+    r.run(3);
+    CHECK(r.spinner.state() == State::Running);
+    r.chip.powerOn();  // lost power: the driver configures it again, disabled
+    r.run(1);
+    CHECK(r.spinner.state() == State::Halted);
+    CHECK(!r.driver.enabled());
+}

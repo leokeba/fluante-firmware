@@ -1,0 +1,12 @@
+# The sibling commits Fluante builds against: the host build
+# (CMakeLists.txt warns when a checkout beside this repository isn't one),
+# the firmware CI releases, the launcher and the bridge
+# (.github/workflows/release.yml). One owner/repo@sha per line, TesserKIT's
+# own deps.lock for the ones it shares. Update it with scripts/pin.sh, after
+# the siblings' commits are pushed, and commit it with the change that needs
+# them.
+leokeba/TesserAPI@65ee0175ffaff71a59f186fd362526c208a8f9d5
+leokeba/TesserUI@2a374eb7784cae49af54334d66bd5869ce1db757
+leokeba/NowTP@7586949dfea84c3a09039bb0086a255ff838928e
+leokeba/TesserKIT@b358e14e50ab6d683f2073b9f707f26f500986ec
+leokeba/TesserMotion@1a917e04ba575d69a070b7c05002836dd9e73d92
