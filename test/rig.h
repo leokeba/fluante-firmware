@@ -5,6 +5,7 @@
 
 #include <math.h>
 
+#include <functional>
 #include <string>
 #include <string_view>
 
@@ -70,7 +71,9 @@ struct Rig {
     }
 
     // `idle` seconds of ticks, so the driver has read every register.
-    explicit Rig(float idle = 0.5f) {
+    // `prepare` sets the chip up before the driver looks for it.
+    explicit Rig(float idle = 0.5f, std::function<void(fake::Tmc2209&)> prepare = nullptr) {
+        if (prepare) prepare(chip);
         chip.attach(uart);
         driver.settings.microsteps = 256;
         motion.add(spinner);

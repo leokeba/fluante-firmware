@@ -40,6 +40,17 @@ void Spinner::begin() { driver_.claim("spinner"); }
 void Spinner::update(uint64_t nowUs) {
     // The driver's ramp follows the spinner's acceleration, in its units.
     driver_.ramp.acceleration = fabsf(microstepsPerSecond(settings.acceleration));
+    if (!booted_) {
+        booted_ = true;
+        tessermotion::TmcFound found = driver_.status().found;
+        if (found == tessermotion::TmcFound::Turning && driver_.enabled()) {
+            // Adopted at the speed it turned at: on to the speed asked, or
+            // down to a stop, on the ramp.
+            state_ = want_ ? State::Running : State::Stopping;
+        } else if (found == tessermotion::TmcFound::Coasting) {
+            coastUntilUs_ = nowUs + static_cast<uint64_t>(settings.coastMs) * 1000;
+        }
+    }
     switch (state_) {
         case State::Halted:
             return;
@@ -53,6 +64,7 @@ void Spinner::update(uint64_t nowUs) {
                 state_ = State::Absent;
                 return;
             }
+            if (nowUs < coastUntilUs_) return;  // the sculpture still coasting
             driver_.overrideCurrent(settings.settleCurrent);
             driver_.enable(true);
             sinceUs_ = nowUs;

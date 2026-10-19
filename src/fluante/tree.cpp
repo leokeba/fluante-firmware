@@ -47,7 +47,8 @@ void describe(Object& o, Spinner& sp) {
         .doc("Turns the sculpture, and again at power-up while on");
     o.value("state", [&sp] { return sp.state(); }, {"stopped", "absent", "settling", "running", "stopping", "halted"})
         .watch()
-        .doc("absent: the driver doesn't answer. halted: the driver was disabled underneath; set running again");
+        .doc("absent: the driver doesn't answer. halted: the driver was disabled underneath; set running again. "
+             "stopped while running is on: waiting for the sculpture to coast down at boot");
     o.value("rpm", [&sp] { return sp.rpm(); }).unit("rpm").ui("precision", 1).watch().doc("The speed now, as ramped");
     setting(o, "speed", sp, s.speed)
         .range(-240, 240)
@@ -86,6 +87,11 @@ void describe(Object& o, Spinner& sp) {
         .step(0.01)
         .unit("A")
         .doc("rms while settling; 0: the run current. The old firmware settled at 0.03");
+    setting(start, "coast", sp, s.coastMs)
+        .range(0, 60000)
+        .unit("ms")
+        .doc("At boot, when the driver was found coasting (off through a reset of the ESP32 alone): the wait for "
+             "the sculpture to stop before enabling it");
 }
 
 void mountTree(tesser::Api& api, Strobe& strobe, Spinner& spinner, tessermotion::Tmc2209& driver,

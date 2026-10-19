@@ -40,6 +40,10 @@ public:
         uint16_t stepsPerTurn = 200;  // the motor's full steps
         uint32_t settleMs = 1000;     // at standstill after enabling
         float settleCurrent = 0;      // A rms while settling; 0: the run current
+        // At boot, after a driver found coasting (its power stage was off
+        // through the ESP32's reset while the sculpture turned): the wait
+        // before enabling it.
+        uint32_t coastMs = 10000;
     };
 
     explicit Spinner(tessermotion::Tmc2209& driver) : driver_(driver) {}
@@ -73,6 +77,8 @@ private:
     bool want_ = false;
     State state_ = State::Stopped;
     uint64_t sinceUs_ = 0;  // entered Settling
+    bool booted_ = false;   // the first update, which sees what the driver found
+    uint64_t coastUntilUs_ = 0;
 };
 
 }  // namespace fluante

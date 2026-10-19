@@ -190,3 +190,59 @@ TEST(spinner_keeps_its_speed_through_a_microsteps_change) {
         CHECK(near(r.vactual() / static_cast<float>(256u >> mres), 222.2, 0.5));
     }
 }
+
+namespace {
+
+// A TMC2209 left turning by a reset of the ESP32 alone: powered (no reset
+// flag), its stage on, VACTUAL at 116 rpm of the sculpture (TSTEP 108: 434
+// full steps/s) at 256 microsteps; MSCNT advancing `perRead` per read.
+void turningChip(fake::Tmc2209& c, int32_t perRead) {
+    c.regs[r22::GSTAT] = 0;
+    c.regs[r22::DRV_STATUS] = r22::cs_actual.set(0, 31);
+    c.regs[r22::TSTEP] = 108;
+    c.regs[r22::CHOPCONF] = r22::mres.set(0x10000053, 0);
+    c.mscntPerRead = perRead;
+}
+
+}  // namespace
+
+TEST(spinner_goes_on_from_a_chip_found_turning) {
+    Rig r(0, [](fake::Tmc2209& c) { turningChip(c, 140); });
+    CHECK(r.driver.status().found == tessermotion::TmcFound::Turning);
+    r.spinner.settings.speed = 100;
+    r.spinner.run(true);  // as the stored state does, before Motion starts
+    r.tick();
+    CHECK(r.spinner.state() == State::Running);  // no settle
+    CHECK(near(r.spinner.rpm(), 116, 1.5));
+    for (int i = 0; i < 50; i++) {
+        r.tick();
+        CHECK(r.driver.enabled());  // never stopped
+    }
+    CHECK(near(r.spinner.rpm(), 100, 0.01));  // ramped down to the speed asked
+    CHECK(near(r.vactual(), r.spinner.microstepsPerSecond(100), 30));
+}
+
+TEST(spinner_ramps_a_chip_found_turning_down_when_not_running) {
+    Rig r(0, [](fake::Tmc2209& c) { turningChip(c, 140); });
+    r.tick();
+    CHECK(r.spinner.state() == State::Stopping);
+    CHECK(r.driver.enabled());
+    CHECK(r.spinner.rpm() > 100);
+    r.run(2.1f);  // 116 rpm at 60 rpm/s
+    CHECK(r.spinner.state() == State::Stopped);
+    CHECK(!r.driver.enabled());
+}
+
+TEST(spinner_waits_for_a_chip_found_coasting) {
+    Rig r(0, [](fake::Tmc2209& c) { turningChip(c, 0); });  // its direction can't be told
+    CHECK(r.driver.status().found == tessermotion::TmcFound::Coasting);
+    CHECK(!r.driver.enabled());
+    r.spinner.settings.coastMs = 3000;
+    r.spinner.run(true);
+    r.run(2.9f);
+    CHECK(r.spinner.state() == State::Stopped);
+    CHECK(!r.driver.enabled());
+    r.run(0.2f);
+    CHECK(r.spinner.state() == State::Settling);
+    CHECK(r.driver.enabled());
+}
