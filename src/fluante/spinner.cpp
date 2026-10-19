@@ -32,7 +32,7 @@ float Spinner::microstepsPerSecond(float sculptureRpm) const {
     float ratio = settings.ratio > 0 ? settings.ratio : 1;
     float motorTurnsPerSecond = sculptureRpm / 60.0f / ratio;
     return motorTurnsPerSecond * static_cast<float>(settings.stepsPerTurn) *
-           static_cast<float>(driver_.settings.microsteps);
+           static_cast<float>(driver_.microsteps());
 }
 
 void Spinner::begin() { driver_.claim("spinner"); }

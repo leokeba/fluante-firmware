@@ -14,7 +14,7 @@ TEST(spinner_units) {
     CHECK(near(r.spinner.microstepsPerSecond(60), 56888.9, 0.5));
     CHECK(near(r.spinner.microstepsPerSecond(-60), -56888.9, 0.5));
     r.spinner.settings.ratio = 1;
-    r.driver.settings.microsteps = 16;
+    r.driver.setMicrosteps(16);
     CHECK(near(r.spinner.microstepsPerSecond(60), 3200, 0.01));
 }
 
@@ -171,4 +171,22 @@ TEST(spinner_halts_when_the_chip_resets) {
     r.run(1);
     CHECK(r.spinner.state() == State::Halted);
     CHECK(!r.driver.enabled());
+}
+
+TEST(spinner_keeps_its_speed_through_a_microsteps_change) {
+    for (const char* to : {"\"16\"", "\"1\"", "\"256\""}) {
+        Rig r;
+        r.spinner.settings.speed = 60;
+        r.spinner.run(true);
+        r.run(3);
+        CHECK(near(r.spinner.rpm(), 60, 0.01));
+        CHECK(r.set("/driver/config/microsteps", to).status == tesser::Status::Ok);
+        for (int i = 0; i < 25; i++) {
+            r.tick();
+            CHECK(near(r.spinner.rpm(), 60, 0.1));
+        }
+        // What the chip runs, in full steps: 60 rpm through 0.9 is 222.2/s.
+        uint32_t mres = r.written(r22::mres);
+        CHECK(near(r.vactual() / static_cast<float>(256u >> mres), 222.2, 0.5));
+    }
 }

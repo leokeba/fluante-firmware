@@ -55,7 +55,8 @@ public:
     float rpm();  // the sculpture's speed now, as the driver ramps it
 
     // The driver's velocity for `rpm` of the sculpture, in µsteps/s, at the
-    // driver's microsteps (also rpm/s to µsteps/s²). Under the lock.
+    // microsteps in effect (also rpm/s to µsteps/s²): the driver keeps the
+    // speed through a change. Under the lock.
     float microstepsPerSecond(float sculptureRpm) const;
 
     // Part
