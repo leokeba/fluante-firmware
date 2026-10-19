@@ -41,7 +41,7 @@ Tmc2209 driver(tmcUart, {.address = 0, .enable = board::kTmcEnable});  // 0.11 Î
 Motion motion;
 
 fluante::Spinner spinner(driver);
-fluante::Strobe strobe(fluante::defaultPwm(), board::kStrobe);
+fluante::Strobe strobe(tesserkit::espPwm(), board::kStrobe);
 fluante::Inrush inrush;
 
 }  // namespace

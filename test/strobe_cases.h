@@ -4,28 +4,33 @@
 
 #include "rig.h"
 
-using fluante::Clock;
-using fluante::plan;
 using fluante::Strobe;
+using tesserkit::pwm::kEsp32;
+
+namespace {
+// kEsp32's clocks' ids.
+constexpr uint8_t kApb = 1, kRefTick = 2;
+tesserkit::pwm::Timing plan(double hz, uint8_t bits) { return tesserkit::pwm::plan(kEsp32, hz, bits); }
+}  // namespace
 
 TEST(strobe_plan_at_60hz) {
-    fluante::Timing t = plan(60.01, Strobe::kBits);
-    CHECK(t.clock == Clock::Apb);
+    tesserkit::pwm::Timing t = plan(60.01, Strobe::kBits);
+    CHECK(t.clock == kApb);
     CHECK_EQ(t.bits, 12);
     // A divider step is 1/83305 of the frequency: well under 0.001 Hz.
     CHECK(near(t.frequency, 60.01, 0.001));
-    fluante::Timing next = plan(60.011, Strobe::kBits);
+    tesserkit::pwm::Timing next = plan(60.011, Strobe::kBits);
     CHECK(next != t);
 }
 
 TEST(strobe_plan_slow_and_fast) {
     // Under about 19 Hz, 12 bits from APB would need a divider over 1023:
     // the 1 MHz clock instead, down to 0.24 Hz.
-    fluante::Timing slow = plan(1, Strobe::kBits);
-    CHECK(slow.clock == Clock::RefTick);
+    tesserkit::pwm::Timing slow = plan(1, Strobe::kBits);
+    CHECK(slow.clock == kRefTick);
     CHECK_EQ(slow.bits, 12);
     CHECK(near(slow.frequency, 1, 1e-4));
-    fluante::Timing fast = plan(1000, Strobe::kBits);
+    tesserkit::pwm::Timing fast = plan(1000, Strobe::kBits);
     CHECK_EQ(fast.bits, 12);
     CHECK(near(fast.frequency, 1000, 0.05));
 }
@@ -66,7 +71,7 @@ TEST(strobe_retimes_only_on_change) {
     CHECK_EQ(r.pwm.timings, timings);
     r.strobe.setFrequency(5);
     CHECK_EQ(r.pwm.timings, timings + 1);
-    CHECK(r.pwm.timed.clock == Clock::RefTick);
+    CHECK(r.pwm.timed.clock == kRefTick);
     CHECK_EQ(r.pwm.counts, 123u);
 }
 

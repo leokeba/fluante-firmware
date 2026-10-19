@@ -1,19 +1,24 @@
 #pragma once
 
-// The strobe (docs/DESIGN.md section 5.1): an LED flashed by the LEDC at a
-// frequency, for a share of each period. The tree's setters call these, under
-// the API lock; nothing else touches it.
+// The strobe (docs/DESIGN.md section 5.1): an LED flashed by a TesserKIT
+// PwmOutput (the LEDC, a timer of its own) at a frequency, for a share of
+// each period, with Fluante's defaults and resolution. The tree's setters
+// call these, under the API lock; nothing else touches it.
 
 #include <stdint.h>
 
-#include "fluante/pwm.h"
-#include "fluante/timing.h"
+#include "tesserkit/pwm.h"
 
 namespace fluante {
 
 class Strobe {
 public:
-    Strobe(Pwm& pwm, int pin) : pwm_(pwm), pin_(pin) {}
+    Strobe(tesserkit::Pwm& pwm, int pin) : pwm_(pwm), out_(pwm, pin) {
+        out_.setOn(kOn);
+        out_.setFrequency(kFrequency);
+        out_.setDuty(kDuty);
+        out_.setResolution(kBits);
+    }
 
     // Factory defaults, until the stored settings say otherwise: the old
     // firmware's.
@@ -29,36 +34,29 @@ public:
     static constexpr double kHighestHz = 1000;
 
     // Attaches the pin and applies the settings. Before it, setters only store.
-    bool begin();
+    bool begin() { return out_.begin(); }
 
-    bool on() const { return on_; }
-    float duty() const { return duty_; }             // percent
-    double frequency() const { return frequency_; }  // Hz, as asked
-    void setOn(bool on);
-    void setDuty(float percent);
-    void setFrequency(double hz);
+    bool on() const { return out_.on(); }
+    float duty() const { return out_.duty(); }             // percent
+    double frequency() const { return out_.frequency(); }  // Hz, as asked
+    void setOn(bool on) { out_.setOn(on); }
+    void setDuty(float percent) { out_.setDuty(percent); }
+    void setFrequency(double hz) { out_.setFrequency(hz); }
 
-    // What the timer runs.
-    const Timing& timing() const { return timing_; }
-    // The compare value applied: 0 while off.
-    uint32_t counts() const { return on_ ? dutyCounts(duty_, timing_.bits) : 0; }
+    // What the timer runs (zeros before begin()).
+    const tesserkit::pwm::Timing& timing() const { return out_.timing(); }
+    uint32_t counts() const { return out_.counts(); }
     // The flash's length as applied, in µs (0 while off).
-    double pulseUs() const;
-    int pin() const { return pin_; }
+    double pulseUs() const { return out_.pulseUs(); }
+    int pin() const { return out_.pin(); }
 
+    // Applies a duty waiting for the end of its period; often, under the API
+    // lock.
     void poll() { pwm_.poll(); }
 
 private:
-    void retime();
-    void applyDuty();
-
-    Pwm& pwm_;
-    int pin_;
-    bool begun_ = false;
-    bool on_ = kOn;
-    float duty_ = kDuty;
-    double frequency_ = kFrequency;
-    Timing timing_ = plan(kFrequency, kBits);
+    tesserkit::Pwm& pwm_;
+    tesserkit::PwmOutput out_;
 };
 
 }  // namespace fluante

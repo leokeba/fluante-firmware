@@ -13,6 +13,7 @@
 #include "Fluante.h"
 #include "TesserAPI.h"
 #include "TesserMotion.h"
+#include "tesserkit/pwm.h"
 #include "check.h"
 #include "fake_hw.h"
 #include "fake_tmc.h"
@@ -26,24 +27,25 @@ constexpr uint32_t kTickUs = 20000;
 constexpr int kStrobePin = 19;
 constexpr int kEnablePin = 13;
 
-// What the strobe gave the LEDC.
-struct FakePwm : fluante::Pwm {
+// What the strobe gave the LEDC: its one output.
+struct FakePwm : tesserkit::Pwm {
     int pin = -1;
     bool attachOk = true;
     int timings = 0;
-    fluante::Timing timed;
+    tesserkit::pwm::Timing timed;
     uint32_t counts = 0;
     int duties = 0;
 
-    bool attach(int p) override {
+    const tesserkit::pwm::Chip& chip() const override { return tesserkit::pwm::kEsp32; }
+    int attach(int p) override {
         pin = p;
-        return attachOk;
+        return attachOk ? 0 : -1;
     }
-    void timing(const fluante::Timing& t) override {
+    void timing(int, const tesserkit::pwm::Timing& t) override {
         timed = t;
         timings++;
     }
-    void duty(uint32_t c) override {
+    void duty(int, uint32_t c) override {
         counts = c;
         duties++;
     }

@@ -44,7 +44,7 @@ The old firmware's latest board ("new control board", caca2e2): a classic ESP32 
 
 Only what is specific to a Fluante is here; the rest comes from the libraries, pinned in `deps.lock`:
 
-- **TesserKIT**: `Device`, `System`, `Network` (Wi-Fi, the access point, mDNS), `Firmware` (uploads, GitHub releases, rollback), `Files` (LittleFS: the settings), `Auth`, `NowTp` (the Fluantes nearby, mounted under `/peers`), `Log`; TesserAPI's serial transport on the console's UART (the launcher's USB way).
+- **TesserKIT**: `PwmOutput` (the strobe's LEDC), `Device`, `System`, `Network` (Wi-Fi, the access point, mDNS), `Firmware` (uploads, GitHub releases, rollback), `Files` (LittleFS: the settings), `Auth`, `NowTp` (the Fluantes nearby, mounted under `/peers`), `Log`; TesserAPI's serial transport on the console's UART (the launcher's USB way).
 - **TesserMotion**: `Tmc2209` on a `UartPort`, `Motion` (the control task, 50 Hz).
 - **TesserUI**: the interface, and `Views` for the first page.
 
@@ -52,9 +52,8 @@ Only what is specific to a Fluante is here; the rest comes from the libraries, p
 
 | Piece | Does | Uses |
 |---|---|---|
-| `timing` | `plan()`: the LEDC's clock, divider and resolution for a frequency; `dutyCounts()`. From ballet-photophonique. | nothing |
-| `Pwm` | the strobe's LEDC: `platform/esp/pwm_esp.cpp` (high-speed timer 0, channel 0); a fake in the tests | ESP-IDF's LEDC |
-| `Strobe` | on, frequency, duty, applied to the LEDC | `Pwm`, `timing` |
+| `Strobe` | on, frequency, duty, with Fluante's defaults and resolution | TesserKIT's `PwmOutput` on `espPwm()` (the LEDC's high-speed timer 0 and channel 0, taken first); a fake `tesserkit::Pwm` in the tests |
+| `Inrush` | when to bypass the strobe capacitor's inrush resistor (§5.3) | nothing |
 | `Spinner` | a TesserMotion `Part`: start, ramp, stop, halts; the velocity in rpm | `Tmc2209` |
 | `tree.cpp`, `views.cpp` | the `/strobe` and `/spinner` trees, the sections' order and labels, the first page | TesserAPI, TesserUI |
 
@@ -131,14 +130,14 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 
 | Request | Layer | For | Status |
 |---|---|---|---|
-| The shared clock through `tesserkit::NowTp`: which node is the time reference (a setting, or chosen automatically), `networkTimeUs()` / `localTimeUs()`, the offset and round trip in `/sys/nowtp/status`. NowTP has `TimeSync`; TesserKIT never sets a reference, so nothing syncs. | TesserKIT (NowTP) | phase-synchronized strobes (§11, phase 3) | committed on TesserKIT b8c3afb, not pushed yet (2026-10-19): `NowTp::networkTimeUs()`, `localTimeUs()`, `timeSynced()`; `/sys/nowtp/time/` (reference `auto`, `this` or a MAC; interval; status). `auto` needs a NowTP change (asked of nowtp-9f). 100 µs unverified until measured on two boards. Crystals differ by ±20 ppm: a locked strobe needs its period trimmed continuously |
+| The shared clock through `tesserkit::NowTp`: which node is the time reference (a setting, or chosen automatically), `networkTimeUs()` / `localTimeUs()`, the offset and round trip in `/sys/nowtp/status`. NowTP has `TimeSync`; TesserKIT never sets a reference, so nothing syncs. | TesserKIT (NowTP) | phase-synchronized strobes (§11, phase 3) | done, TesserKIT b8c3afb (pinned at e08bf49, on NowTP 7586949): a MAC applies at once, `this` or back to `auto` at the next boot (`restartNeeded`); TesserKIT 2a84513 on NowTP d2b515e (not pushed yet) elects a reference among `auto` nodes and applies every change at once. `NowTp::networkTimeUs()`, `localTimeUs()`, `timeSynced()`; `/sys/nowtp/time/` (reference `auto`, `this` or a MAC; interval; status). `auto` needs a NowTP change (asked of nowtp-9f). 100 µs unverified until measured on two boards. Crystals differ by ±20 ppm: a locked strobe needs its period trimmed continuously |
 | A velocity ramp on `Tmc2209` (acceleration, as `Tmc5160::Ramp` has in hardware): VACTUAL jumps can stall a motor. The spinner ramps itself meanwhile, as an application's part may. | TesserMotion | the spinner (§5.2) | done, TesserMotion 9d4cc2e (pinned): `Tmc2209::ramp.acceleration`, `actualVelocity()`; the spinner's own ramp dropped |
 | PWMCONF's fields as settings (`pwm_ofs`, `pwm_grad`, `pwm_autoscale`, `pwm_autograd`, `pwm_freq`, `freewheel`, `pwm_lim`, `pwm_reg`), stored; decoded fields for `TCOOLTHRS`, `SGTHRS`, `SG_RESULT`. Today only raw register writes, not stored: the spinner writes `pwm_ofs` and `pwm_grad` at each start. | TesserMotion | the start (§5.2), the old firmware's driver page | done, 9d4cc2e: `driver.pwm` stored at `/driver/pwm/`, `status/stallGuard`, decoded TCOOLTHRS, SGTHRS, SG_RESULT; the spinner's PWMCONF write dropped |
 | A current for a while (the old preheat's 30 mA settle), without changing the stored run current. | TesserMotion | the start (§12) | done, 9d4cc2e: `overrideCurrent()`, used by `settleCurrent` |
 | Mounting a driver's tree without its controls (`enabled`, `velocity`, `stop`) when an application's part drives it. | TesserMotion | `/driver` beside `/spinner` | done differently, 9d4cc2e: `claim(owner)` turns the controls into readouts refusing writes with `busy` |
 | **`UartPort::read()` waits too little**: 10 ms is 1 tick at 100 Hz, which ends at the next tick, 0 to 10 ms away; reads straddling a tick time out, so `connect()`'s ~20 reads in a row rarely complete. Measured on the board: 59 of 300 back-to-back IOIN reads fail with 1 tick, none with 2 or 3. Fix: round up and add a tick | TesserMotion | the TMC2209 found at all (§10) | done, TesserMotion e257d60 (pinned): waits round up and add a tick; on the board, found at every boot |
 | Diagnostics for an absent chip: failed connects counted, the last reason (no reply, echo only, bad CRC, wrong version) | TesserMotion | `/driver/status` | done, 9d4cc2e: every failed transfer counted, `status/lastError` |
-| A precise LEDC output (ballet-photophonique's `plan()` and `pwm_esp.cpp`, copied here), with a phase *(later)*. | TesserKIT | the strobe (§5.1); shared with ballet-photophonique | committed on TesserKIT 2536928 (`tesserkit/pwm.h`: `pwm::plan(chip, …)`, `Pwm`, `espPwm()`, `PwmOutput`), not pushed yet; the strobe moves onto it once pinned. As asked: `plan()` per chip, a `Pwm` platform interface with a fake, an output class (frequency, duty, resolution, on; applied timing, counts, pulse), no tree; LEDC timers from the bottom up; the phase *(later)* |
+| A precise LEDC output (ballet-photophonique's `plan()` and `pwm_esp.cpp`, copied here before), with a phase *(later)*. | TesserKIT | the strobe (§5.1); shared with ballet-photophonique | done, TesserKIT 2536928 (pinned at e08bf49; `tesserkit/pwm.h`: `pwm::plan(chip, …)`, `Pwm`, `espPwm()`, `PwmOutput`); the strobe is on it, the copy removed. As asked: `plan()` per chip, a `Pwm` platform interface with a fake, an output class (frequency, duty, resolution, on; applied timing, counts, pulse), no tree; LEDC timers from the bottom up; the phase *(later)* |
 
 ## 10. Testing
 
