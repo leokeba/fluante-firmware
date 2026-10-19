@@ -15,7 +15,7 @@ A Fluante is a 3D-printed sculpture (fluante_generator) turned by a stepper moto
 
 ### Non-goals (for now)
 
-- **Phase-synchronized strobes** across Fluantes (the old firmware's clock sync, partly built there): a goal, not in phase 1 (Leo, 2026-10-19). §9 lists what it needs.
+- **Phase-synchronized strobes** across Fluantes (the old firmware's clock sync, partly built there): a goal, not in phase 1 (Leo, 2026-10-19). §9 lists what it needs. NowTP's network time, measured by nowtp-9f on two classic ESP32s 1 m apart (2026-10-19, NowTP 83b80c1): median −1 µs, p5/p95 −46/+92 µs, worst 346 µs, single rounds off by ~120 µs until the next. Enough: at 116 rpm, 346 µs turns the sculpture 0.24°, inside a 500 µs flash.
 - **Step and direction** pulses: the TMC2209 turns the motor by itself (VACTUAL). The old firmware's LEDC-STEP variant and its speed oscillation are dropped (Leo, 2026-10-19).
 - **The strobe locked to the rotation** (frames per turn): not tied (Leo, 2026-10-19).
 - UDP, Ethernet, Art-Net, MQTT: Wi-Fi and NowTP only (Leo, 2026-10-19).
@@ -156,7 +156,7 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 |---|---|---|
 | 1 *(host-tested)* | Strobe, spinner, trees, first page; Wi-Fi, NowTP, updates | Host tests; the firmware on the board: the strobe measured, the sculpture turning, a setting written to another Fluante under `/peers` |
 | 2 | Releases and the launcher on GitHub Pages (`.github/workflows/release.yml`, `pages/`) once the repository is on GitHub | A release installed from `/sys/firmware/github` |
-| 3 | Phase-synchronized strobes on NowTP's shared clock (§9) | Two Fluantes' strobes within 100 µs of each other on a scope |
+| 3 | Phase-synchronized strobes on NowTP's shared clock (§9): the strobe's period steered slowly (the LEDC's fractional divider, no timer reset) toward flashes at whole periods of network time, so single bad rounds are filtered rather than followed | Two Fluantes' strobes within 100 µs of each other on a scope, median; a GPIO edge between two units (nowtp-9f offers the firmware) |
 
 ## 12. Open questions
 
