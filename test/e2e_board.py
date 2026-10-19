@@ -2,9 +2,11 @@
 transport (envelopes, one per line), without turning the motor.
 
 Usage:
-  uv run --with pyserial python test/e2e_board.py PORT [--reset]
+  uv run --with pyserial python test/e2e_board.py PORT [--reset] [--mac MAC]
 
-With --reset, restarts the board first and waits for it to answer. Reads the
+With --reset, restarts the board first and waits for it to answer. With
+--mac, refuses a board whose MAC differs: boards with the same USB serial
+number swap port names when they re-enumerate. Reads the
 device's status, the TMC2209's (whether it answers on its UART, its version
 and flags), the strobe's applied timing; writes the strobe's frequency and
 duty and reads them back, then restores them. The spinner must be stopped:
@@ -98,6 +100,9 @@ def main():
         print(f'E2E pass={passed} fail={failed}')
         return 1
     print('  status:', json.dumps(status))
+    if '--mac' in sys.argv and status.get('mac') != sys.argv[sys.argv.index('--mac') + 1].lower():
+        print(f'not the board asked for: {status.get("mac")}')
+        return 1
 
     st, spinner = b.get('/spinner')
     check('spinner tree', st == 'ok', st)

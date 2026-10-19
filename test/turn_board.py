@@ -4,7 +4,7 @@ motor, so run it only with Leo's go-ahead.
 
 Usage:
   uv run --with pyserial python test/turn_board.py PORT [--speed RPM]
-      [--current A] [--accel RPM/S] [--seconds S] [--settle-current A]
+      [--current A] [--accel RPM/S] [--seconds S] [--settle-current A] [--mac MAC]
 
 Sets the run current, the speed and the acceleration, turns /spinner/running
 on, samples every half second (the spinner's state and speed; DRV_STATUS's
@@ -54,6 +54,10 @@ def main():
     accel = arg('--accel', 30.0)
     seconds = arg('--seconds', 8.0)
     b = Board(sys.argv[1], False)
+    _, status = b.get('/sys/status')
+    if '--mac' in sys.argv and (status or {}).get('mac') != arg('--mac', '').lower():
+        print(f'not the board asked for: {(status or {}).get("mac")}')
+        return 1
 
     _, sp0 = b.get('/spinner')
     _, cfg0 = b.get('/driver/config')
