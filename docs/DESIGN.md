@@ -1,6 +1,6 @@
 # Fluante design
 
-Status: phase 1 (2026-10-19): the strobe and the spinner, their trees and host tests, on TesserKIT, TesserMotion and NowTP; the firmware builds for the classic ESP32 (ESP-IDF 6.1-dev, 1.48 MB, 16 % of the slot free), not yet on the board. This is the specification the code follows; when the two disagree, fix one of them. Sections marked *(later)* are committed to but not built yet.
+Status: phase 1 (2026-10-19): the strobe and the spinner, their trees and host tests, on TesserKIT, TesserMotion and NowTP; the firmware builds for the classic ESP32 (ESP-IDF 6.1-dev, 1.48 MB, 16 % of the slot free) and runs on DivergentFluante's board over USB (§10): the strobe's settings applied, the TMC2209 not answering yet (motor supply not checked). This is the specification the code follows; when the two disagree, fix one of them. Sections marked *(later)* are committed to but not built yet.
 
 Fluante replaces [leokeba/fluante_firmware](https://github.com/leokeba/fluante_firmware) (Arduino, PlatformIO, ESPUI, TMCStepper, 2023), called "the old firmware" below.
 
@@ -135,7 +135,8 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. **None 
 
 1. **Host** (`test/`, `cmake -S . -B build && cmake --build build && ctest --test-dir build`, ASan and UBSan): the LEDC plan at 60 Hz, 1 Hz and 1 kHz; what the strobe gives a fake LEDC (begin, on/off, duty counts, retiming only on change, the pulse's length); the spinner on TesserMotion's fake TMC2209: units, booting stopped, the start (PWMCONF written with its other bits kept, the settle, the ramp), outliving the deadman, speed and direction changes on a ramp, stopping on a ramp, halts on `stopAll()`, on `/driver/enabled` and on a reset of the chip, waiting for an absent driver; the tree declared cleanly, validated, stored and restored.
 2. **Firmware build** with ESP-IDF 6.1-dev; CI releases with 5.5 (TesserKIT's `firmware.yml`).
-3. *(later)* **On the board**: the strobe on a scope (frequency and pulse against `applied/`), the motor turning, ramping, stopping and turning again after a power cycle; two Fluantes seeing each other under `/peers`.
+3. **On the board** (`test/e2e_board.py PORT`, over the serial API; it never turns the motor). 2026-10-19, DivergentFluante's board (40:22:d8:68:17:e8, ESP32-D0WD-V3 rev 3.0; its old flash in `~/Dev/board-backups/fluante-4022d86817e8-oldfw.bin`, sha1 7e83a023…), erased and flashed over USB, no Wi-Fi saved: boots, access point `fluante-17e8`, 120 KB of heap free (110 KB largest block); the trees answer; the strobe's 48.5 Hz at 2 % applied (48.5000 Hz, a 412 µs pulse) and restored. **The TMC2209 doesn't answer** (`/driver/status/present` false): on USB power only, its logic is likely unpowered (it runs from the motor supply); not tried with the supply on. 8 checks of 9.
+4. *(later)*: the strobe on a scope (frequency and pulse against `applied/`), the motor turning, ramping, stopping and turning again after a power cycle; two Fluantes seeing each other under `/peers`.
 
 ## 11. Roadmap
 
