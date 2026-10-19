@@ -38,7 +38,7 @@ The old firmware's latest board ("new control board", caca2e2): a classic ESP32 
 |---|---|---|
 | TMC2209 | UART 2: RX 26, TX 25, 115200 baud; EN 13 (active low); MS1 14, MS2 27 (low: address 0); STEP 33, DIR 32 (held low, unused) | 0.11 Ω sense resistors (TesserMotion's default). |
 | Strobe | GPIO 19 | The LED driver's input. |
-| GPIO 18 | driven high at boot | The old firmware did since this board; purpose unknown (§12). |
+| GPIO 18 | low at power-up, high 2 s after the first tick (§5.3) | A MOSFET bypassing the resistor that limits the strobe capacitor's inrush current (Leo's recollection, 2026-10-19). |
 
 ## 4. Architecture
 
@@ -83,6 +83,10 @@ Only what is specific to a Fluante is here; the rest comes from the libraries, p
 - **At power-up** the stored `running` starts the sculpture: a Fluante left on turns when plugged in, as the old firmware always did. A fresh one is off.
 - The old firmware's preheat settled at 30 mA before raising the current to 950 mA: `settleCurrent` 0.03 does the same; its default, 0, settles at the run current (§12).
 - Factory defaults: 116 rpm (the old firmware's soft start ended there), 60 rpm/s, ratio 0.9, 200 steps, a 1 s settle at the run current; the driver at 256 microsteps, 0.95 A run and 0.5 A hold, stealthChop, PWM `ofs` 255 and `grad` 14.
+
+### 5.3 Inrush
+
+At power-up the strobe's capacitor charges through a resistor that limits the inrush current; a MOSFET on GPIO 18 then bypasses it. The firmware holds GPIO 18 low from `app_main`, and drives it high 2 s after TesserKIT's first tick (`Inrush`, host-tested), about when the old firmware did: at the end of its `setup()`, after Wi-Fi and ESP-NOW's one-second wait. The strobe flashes meanwhile, as it did.
 
 ## 6. The tree
 
@@ -155,7 +159,7 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 
 ## 12. Open questions
 
-- GPIO 18: what does it drive (the LED driver's enable, a fan)? It is driven high, as before.
+- GPIO 18 (§5.3): Leo thinks it bypasses the strobe capacitor's inrush resistor, not sure; 2 s is a guess from the old firmware's timing. To check on the board (the supply at power-up with and without the delay).
 - The old preheat settled at 30 mA, then raised the current to 950 mA: needed (stealthChop's automatic tuning, noise, a cold start)? The spinner settles at the run current; Leo to listen to starts with and without (2026-10-19).
 - At 116 rpm and 0.95 A stealthChop saturates (`pwm_scale_sum` 255): the motor supply's voltage, a lower current, or spreadCycle above some speed (`stealthChopMax`)?
 - The GitHub repository's name for releases: `leokeba/fluante-firmware` is assumed.

@@ -19,8 +19,9 @@ constexpr int kTmcStep = 33, kTmcDir = 32;
 // The strobe's LED driver input.
 constexpr int kStrobe = 19;
 
-// Driven high at boot by the old firmware since the new board (its purpose
-// isn't recorded: docs/DESIGN.md section 12).
-constexpr int kAux = 18;
+// A MOSFET bypassing the resistor that limits the strobe capacitor's inrush
+// current (Leo's recollection, 2026-10-19): low at power-up, high once the
+// capacitor has charged (docs/DESIGN.md section 5.3).
+constexpr int kInrushBypass = 18;
 
 }  // namespace board

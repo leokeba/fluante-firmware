@@ -42,6 +42,7 @@ Motion motion;
 
 fluante::Spinner spinner(driver);
 fluante::Strobe strobe(fluante::defaultPwm(), board::kStrobe);
+fluante::Inrush inrush;
 
 }  // namespace
 
@@ -64,7 +65,7 @@ extern "C" void app_main() {
     gpio.output(board::kTmcMs2, false);
     gpio.output(board::kTmcStep, false);
     gpio.output(board::kTmcDir, false);
-    gpio.output(board::kAux, true);
+    gpio.output(board::kInrushBypass, false);  // the strobe's capacitor charges through its resistor
 
     // Factory defaults, until the stored settings say otherwise: the old
     // firmware's 256 microsteps and 0.95 A.
@@ -89,8 +90,10 @@ extern "C" void app_main() {
         if (s == tesserkit::State::Updating) motion.stopAll();
     });
     // The strobe's duty waiting for the end of a period, in TesserKIT's task
-    // under the API lock, as its setters are.
-    dev.onTick([&api](uint32_t) {
+    // under the API lock, as its setters are; the inrush resistor bypassed
+    // once the capacitor has charged.
+    dev.onTick([&api](uint32_t nowMs) {
+        if (inrush.update(nowMs)) defaultGpio().set(board::kInrushBypass, true);
         tesser::Lock lock(api);
         strobe.poll();
     });

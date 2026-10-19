@@ -69,3 +69,17 @@ TEST(strobe_retimes_only_on_change) {
     CHECK(r.pwm.timed.clock == Clock::RefTick);
     CHECK_EQ(r.pwm.counts, 123u);
 }
+
+TEST(inrush_bypass_after_the_charge) {
+    fluante::Inrush in;
+    // From the first tick, whatever the clock says then.
+    CHECK(!in.update(5000));
+    CHECK(!in.update(6990));
+    CHECK(!in.bypassed());
+    CHECK(in.update(7000));
+    CHECK(in.bypassed());
+    CHECK(!in.update(7020));  // once
+    fluante::Inrush wrap(100);
+    CHECK(!wrap.update(0xFFFFFFF0u));
+    CHECK(wrap.update(0x60u));  // across the clock's wrap
+}
