@@ -125,13 +125,13 @@ def main():
     st, strobe = b.get('/strobe')
     check('strobe tree', st == 'ok', st)
     print('  strobe:', json.dumps(strobe))
-    freq0, duty0 = strobe['frequency'], strobe['duty']
-    st, _ = b.set('/strobe', {'frequency': 48.5, 'duty': 2})
+    freq0, duty0, on0 = strobe['frequency'], strobe['duty'], strobe['on']
+    st, _ = b.set('/strobe', {'on': True, 'frequency': 48.5, 'duty': 2})
     check('strobe set', st == 'ok', st)
     st, applied = b.get('/strobe/applied')
     check('strobe applied 48.5 Hz', st == 'ok' and abs(applied['frequency'] - 48.5) < 0.001, json.dumps(applied))
     check('strobe pulse 412 µs', st == 'ok' and abs(applied['pulse'] - 412) < 5, json.dumps(applied))
-    st, _ = b.set('/strobe', {'frequency': freq0, 'duty': duty0})
+    st, _ = b.set('/strobe', {'on': on0, 'frequency': freq0, 'duty': duty0})
     check('strobe restored', st == 'ok', st)
 
     st, peers = b.get('/peers')

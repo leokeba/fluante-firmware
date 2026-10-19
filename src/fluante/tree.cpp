@@ -61,7 +61,7 @@ void describe(Object& o, Spinner& sp) {
         .step(1)
         .unit("rpm/s")
         .persist()
-        .doc("Up and down; 0 jumps");
+        .doc("Up and down; 0 jumps. Sets the driver's ramp (/driver/ramp)");
 
     auto& mech = o.object("mechanics")
                      .label("Mechanics")
@@ -81,11 +81,11 @@ void describe(Object& o, Spinner& sp) {
                       .doc("What starting does before turning")
                       .ui("collapsed");
     setting(start, "settle", sp, s.settleMs).range(0, 10000).unit("ms").doc("At standstill after enabling");
-    setting(start, "initPwm", sp, s.initPwm)
-        .label("Set stealthChop's PWM")
-        .doc("Writes PWMCONF's pwm_ofs and pwm_grad before enabling");
-    setting(start, "pwmOfs", sp, s.pwmOfs).range(0, 255).ui("visibleWhen", "initPwm=true");
-    setting(start, "pwmGrad", sp, s.pwmGrad).range(0, 255).ui("visibleWhen", "initPwm=true");
+    setting(start, "settleCurrent", sp, s.settleCurrent)
+        .range(0, 2)
+        .step(0.01)
+        .unit("A")
+        .doc("rms while settling; 0: the run current. The old firmware settled at 0.03");
 }
 
 void mountTree(tesser::Api& api, Strobe& strobe, Spinner& spinner, tessermotion::Tmc2209& driver,

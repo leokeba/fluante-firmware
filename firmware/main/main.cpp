@@ -3,8 +3,9 @@
 // TesserMotion for the TMC2209; this repository's strobe and spinner.
 //
 // Flash it, join the "fluante-xxxx" network from a phone, and the interface
-// opens. A fresh Fluante boots with its motor off and its strobe on: set the
-// motor's current (/driver/config/runCurrent), then turn /spinner/running on.
+// opens. A fresh Fluante boots with its motor off and its strobe on: check
+// the motor's current (/driver/config/runCurrent), then turn
+// /spinner/running on.
 // While on, it turns again at every power-up.
 //
 // For development, a gitignored main/secrets.h may define WIFI_SSID and
@@ -70,6 +71,9 @@ extern "C" void app_main() {
     driver.settings.microsteps = 256;
     driver.settings.runCurrent = 0.95f;
     driver.settings.holdCurrent = 0.5f;
+    // stealthChop's start values, as the old firmware's preheat wrote them.
+    driver.pwm.ofs = 255;
+    driver.pwm.grad = 14;
 
     // The spinner sets the driver's velocity before it acts on it.
     motion.add(spinner);

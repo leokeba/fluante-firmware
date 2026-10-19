@@ -4,7 +4,7 @@ motor, so run it only with Leo's go-ahead.
 
 Usage:
   uv run --with pyserial python test/turn_board.py PORT [--speed RPM]
-      [--current A] [--accel RPM/S] [--seconds S] [--no-init-pwm]
+      [--current A] [--accel RPM/S] [--seconds S] [--settle-current A]
 
 Sets the run current, the speed and the acceleration, turns /spinner/running
 on, samples every half second (the spinner's state and speed; DRV_STATUS's
@@ -35,12 +35,13 @@ def registers(b):
 def sample(b, t0):
     _, sp = b.get('/spinner')
     _, drv = b.get('/driver/status')
+    _, actual = b.get('/driver/actualVelocity')
     regs = registers(b)
     f = lambda name: regs.get(name, {}).get('fields', '')
     v = lambda name: regs.get(name, {}).get('value', 0)
     print(f'{time.time() - t0:5.1f}s {sp["state"]:9} rpm={sp["rpm"]:7.2f} '
           f'stst={int(drv["standstill"])} stealth={int(drv["stealthChop"])} cs={drv["current"]:2} '
-          f'err={drv["errors"]} TSTEP={v("TSTEP")} | {f("PWM_SCALE")} | {f("PWM_AUTO")} | SG={v("SG_RESULT")}')
+          f'err={drv["errors"]} v={actual} TSTEP={v("TSTEP")} | {f("PWM_SCALE")} | {f("PWM_AUTO")} | SG={v("SG_RESULT")}')
     return sp, drv
 
 
@@ -66,7 +67,7 @@ def main():
 
     print(b.set('/driver/config/runCurrent', current))
     print(b.set('/spinner', {'speed': speed, 'acceleration': accel}))
-    print(b.set('/spinner/start/initPwm', '--no-init-pwm' not in sys.argv))
+    print(b.set('/spinner/start/settleCurrent', arg('--settle-current', 0.0)))
     t0 = time.time()
     try:
         print(b.set('/spinner/running', True))
@@ -81,7 +82,7 @@ def main():
         sp, _ = sample(b, t0)
         time.sleep(0.5)
     print(b.set('/spinner', {'speed': sp0['speed'], 'acceleration': sp0['acceleration']}))
-    print(b.set('/spinner/start/initPwm', sp0['start']['initPwm']))
+    print(b.set('/spinner/start/settleCurrent', sp0['start']['settleCurrent']))
     print(b.set('/driver/config/runCurrent', cfg0['runCurrent']))
     _, sp = b.get('/spinner')
     print('final:', json.dumps(sp))

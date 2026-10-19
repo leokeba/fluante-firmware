@@ -35,7 +35,7 @@ TEST(tree_persists_and_restores) {
         CHECK(r.set("/strobe", R"({"on":false,"frequency":72.25,"duty":1.5})").status == Status::Ok);
         CHECK(r.set("/spinner", R"({"speed":-90,"acceleration":20,"running":true})").status == Status::Ok);
         CHECK(r.set("/spinner/mechanics/ratio", "0.5").status == Status::Ok);
-        CHECK(r.set("/spinner/start", R"({"settle":250,"pwmOfs":100})").status == Status::Ok);
+        CHECK(r.set("/spinner/start", R"({"settle":250,"settleCurrent":0.03})").status == Status::Ok);
         CHECK(r.set("/driver/config/runCurrent", "0.95").status == Status::Ok);
         stored = r.api.persistedState();
     }
@@ -50,7 +50,7 @@ TEST(tree_persists_and_restores) {
     CHECK_EQ(r.spinner.settings.acceleration, 20.0f);
     CHECK_EQ(r.spinner.settings.ratio, 0.5f);
     CHECK_EQ(r.spinner.settings.settleMs, 250u);
-    CHECK_EQ(r.spinner.settings.pwmOfs, 100);
+    CHECK(near(r.spinner.settings.settleCurrent, 0.03, 1e-6));
     CHECK(r.spinner.running());  // turns again at power-up
     CHECK(near(r.driver.settings.runCurrent, 0.95, 1e-6));
 }

@@ -1,10 +1,9 @@
 #include "fluante/spinner.h"
 
-#include "tessermotion/tmc/tmc2209_map.h"
+#include <math.h>
 
 namespace fluante {
 
-namespace r22 = tessermotion::tmc2209;
 using tessermotion::Guard;
 
 void Spinner::run(bool on) {
@@ -25,7 +24,8 @@ Spinner::State Spinner::state() {
 
 float Spinner::rpm() {
     Guard g(lock());
-    return rpm_;
+    float perRpm = microstepsPerSecond(1);
+    return perRpm != 0 ? driver_.actualVelocity() / perRpm : 0;
 }
 
 float Spinner::microstepsPerSecond(float sculptureRpm) const {
@@ -35,13 +35,16 @@ float Spinner::microstepsPerSecond(float sculptureRpm) const {
            static_cast<float>(driver_.settings.microsteps);
 }
 
+void Spinner::begin() { driver_.claim("spinner"); }
+
 void Spinner::update(uint64_t nowUs) {
+    // The driver's ramp follows the spinner's acceleration, in its units.
+    driver_.ramp.acceleration = fabsf(microstepsPerSecond(settings.acceleration));
     switch (state_) {
         case State::Halted:
             return;
         case State::Stopped:
-        case State::Absent: {
-            rpm_ = 0;
+        case State::Absent:
             if (!want_) {
                 state_ = State::Stopped;
                 return;
@@ -50,19 +53,11 @@ void Spinner::update(uint64_t nowUs) {
                 state_ = State::Absent;
                 return;
             }
-            // PWMCONF's other bits as the driver last read them: a register
-            // copy still at 0 hasn't been read yet, and would clear them.
-            uint32_t pwmconf = driver_.registerValue(r22::PWMCONF);
-            if (settings.initPwm && pwmconf != 0) {
-                pwmconf = r22::pwm_ofs.set(pwmconf, settings.pwmOfs);
-                pwmconf = r22::pwm_grad.set(pwmconf, settings.pwmGrad);
-                driver_.writeRegister(r22::PWMCONF, pwmconf);
-            }
+            driver_.overrideCurrent(settings.settleCurrent);
             driver_.enable(true);
             sinceUs_ = nowUs;
             state_ = State::Settling;
             return;
-        }
         case State::Settling:
             if (!driver_.enabled()) {
                 halt();
@@ -70,39 +65,35 @@ void Spinner::update(uint64_t nowUs) {
             }
             if (!want_) {
                 driver_.enable(false);
+                driver_.overrideCurrent(0);
                 state_ = State::Stopped;
                 return;
             }
             if (nowUs - sinceUs_ >= static_cast<uint64_t>(settings.settleMs) * 1000) {
+                driver_.overrideCurrent(0);
                 state_ = State::Running;
-                lastUs_ = nowUs;
+                // Every tick, so the deadman never runs out while turning.
+                driver_.setVelocity(microstepsPerSecond(settings.speed));
             }
             return;
         case State::Running:
-        case State::Stopping: {
+        case State::Stopping:
             if (!driver_.enabled()) {
                 halt();
                 return;
             }
-            float target = want_ ? settings.speed : 0;
-            state_ = want_ ? State::Running : State::Stopping;
-            float dt = static_cast<float>(nowUs - lastUs_) * 1e-6f;
-            lastUs_ = nowUs;
-            float stepRpm = settings.acceleration * dt;
-            if (!(settings.acceleration > 0) || (rpm_ < target ? target - rpm_ : rpm_ - target) <= stepRpm) {
-                rpm_ = target;
-            } else {
-                rpm_ += rpm_ < target ? stepRpm : -stepRpm;
-            }
-            if (!want_ && rpm_ == 0) {
-                driver_.enable(false);
-                state_ = State::Stopped;
+            if (want_) {
+                state_ = State::Running;
+                driver_.setVelocity(microstepsPerSecond(settings.speed));
                 return;
             }
-            // Every tick, so the deadman never runs out while turning.
-            driver_.setVelocity(microstepsPerSecond(rpm_));
+            state_ = State::Stopping;
+            driver_.hold();  // ramps down
+            if (driver_.actualVelocity() == 0) {
+                driver_.enable(false);
+                state_ = State::Stopped;
+            }
             return;
-        }
     }
 }
 
@@ -112,7 +103,7 @@ void Spinner::stop() {
 }
 
 void Spinner::halt() {
-    rpm_ = 0;
+    driver_.overrideCurrent(0);
     state_ = State::Halted;
 }
 

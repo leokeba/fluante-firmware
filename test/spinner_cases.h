@@ -1,5 +1,5 @@
 // The spinner (docs/DESIGN.md section 5.2) on TesserMotion's fake TMC2209:
-// the start, the ramp, the deadman, stopping and halts.
+// the start, the driver's ramp, the deadman, stopping, the claim and halts.
 #pragma once
 
 #include "rig.h"
@@ -18,11 +18,15 @@ TEST(spinner_units) {
     CHECK(near(r.spinner.microstepsPerSecond(60), 3200, 0.01));
 }
 
-TEST(spinner_boots_stopped) {
+TEST(spinner_boots_stopped_and_claims_the_driver) {
     Rig r;
     CHECK(r.spinner.state() == State::Stopped);
     CHECK(!r.driver.enabled());
     CHECK_EQ(r.written(r22::vactual), 0u);
+    CHECK_EQ(r.driver.owner(), std::string("spinner"));
+    CHECK(r.set("/driver/enabled", "true").status == tesser::Status::Busy);
+    CHECK(r.set("/driver/velocity", "1000").status == tesser::Status::Busy);
+    CHECK(!r.driver.enabled());
 }
 
 TEST(spinner_starts_settles_and_ramps) {
@@ -33,13 +37,9 @@ TEST(spinner_starts_settles_and_ramps) {
     r.tick();
     CHECK(r.spinner.state() == State::Settling);
     CHECK(r.driver.enabled());
-    r.tick();  // the enable's writes go first, within the tick's budget
-    CHECK_EQ(r.written(r22::pwm_ofs), 255u);
-    CHECK_EQ(r.written(r22::pwm_grad), 14u);
-    // PWMCONF's other bits kept: pwm_autoscale stays on.
-    CHECK_EQ(r.written(r22::pwm_autoscale), 1u);
-    CHECK_EQ(r.written(r22::toff), 3u);
-    r.run(0.88f);
+    // The driver's ramp, in its units: 30 rpm/s.
+    CHECK(near(r.driver.ramp.acceleration, 28444.4, 0.5));
+    r.run(0.9f);
     CHECK(r.spinner.state() == State::Settling);
     CHECK_EQ(r.vactual(), 0.0f);
     r.run(0.2f);
@@ -48,10 +48,26 @@ TEST(spinner_starts_settles_and_ramps) {
     float rpm = r.spinner.rpm();
     CHECK(rpm < 6);
     r.run(1);
-    CHECK(near(r.spinner.rpm(), rpm + 30, 0.01));
+    CHECK(near(r.spinner.rpm(), rpm + 30, 0.7));
     r.run(2);
-    CHECK_EQ(r.spinner.rpm(), 60.0f);
+    CHECK(near(r.spinner.rpm(), 60, 0.01));
     CHECK(near(r.vactual(), 56888.9f, 30));
+}
+
+TEST(spinner_settles_at_its_own_current) {
+    Rig r;
+    r.spinner.settings.settleCurrent = 0.03f;
+    r.spinner.run(true);
+    r.tick();
+    CHECK(near(r.driver.currentOverride(), 0.03, 1e-6));
+    r.run(1.1f);
+    CHECK(r.spinner.state() == State::Running);
+    CHECK_EQ(r.driver.currentOverride(), 0.0f);
+    // Without one, the run current.
+    Rig plain;
+    plain.spinner.run(true);
+    plain.tick();
+    CHECK_EQ(plain.driver.currentOverride(), 0.0f);
 }
 
 TEST(spinner_outlives_the_deadman) {
@@ -71,12 +87,12 @@ TEST(spinner_changes_speed_and_direction_on_a_ramp) {
     r.spinner.settings.acceleration = 60;
     r.spinner.run(true);
     r.run(3);
-    CHECK_EQ(r.spinner.rpm(), 60.0f);
+    CHECK(near(r.spinner.rpm(), 60, 0.01));
     r.spinner.settings.speed = -60;
     r.run(1);
     CHECK(near(r.spinner.rpm(), 0, 1.5));
     r.run(1.1f);
-    CHECK_EQ(r.spinner.rpm(), -60.0f);
+    CHECK(near(r.spinner.rpm(), -60, 0.01));
     CHECK(r.vactual() < 0);
 }
 
@@ -90,7 +106,9 @@ TEST(spinner_stops_on_a_ramp) {
     r.tick();
     CHECK(r.spinner.state() == State::Stopping);
     CHECK(r.driver.enabled());
-    r.run(1.1f);
+    r.run(0.5f);
+    CHECK(near(r.spinner.rpm(), 30, 1.5));
+    r.run(0.6f);
     CHECK(r.spinner.state() == State::Stopped);
     CHECK(!r.driver.enabled());
     CHECK_EQ(r.spinner.rpm(), 0.0f);
@@ -115,11 +133,13 @@ TEST(spinner_halts_on_stop_all_and_keeps_running) {
 
 TEST(spinner_halts_when_disabled_underneath) {
     Rig r;
+    r.spinner.settings.settleCurrent = 0.1f;
     r.spinner.run(true);
-    r.run(3);
-    CHECK(r.set("/driver/enabled", "false").status == tesser::Status::Ok);
+    r.tick();
+    r.driver.enable(false);  // code isn't refused by the claim
     r.tick();
     CHECK(r.spinner.state() == State::Halted);
+    CHECK_EQ(r.driver.currentOverride(), 0.0f);
     r.run(1);
     CHECK(!r.driver.enabled());
     CHECK(r.set("/spinner/running", "true").status == tesser::Status::Ok);
