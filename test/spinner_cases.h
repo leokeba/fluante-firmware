@@ -177,19 +177,22 @@ namespace {
 
 // A TMC2209 left turning by a reset of the ESP32 alone: powered (no reset
 // flag), its stage on, VACTUAL at 116 rpm of the sculpture (TSTEP 108: 434
-// full steps/s) at 256 microsteps; MSCNT advancing `perRead` per read.
+// full steps/s) at 256 microsteps, its datagrams 1.1 ms apart; MSCNT
+// advancing `perRead` per read (122 at that speed). The driver tells the
+// direction from the count the speed and the time predict.
 void turningChip(fake::Tmc2209& c, int32_t perRead) {
     c.regs[r22::GSTAT] = 0;
     c.regs[r22::DRV_STATUS] = r22::cs_actual.set(0, 31);
     c.regs[r22::TSTEP] = 108;
     c.regs[r22::CHOPCONF] = r22::mres.set(0x10000053, 0);
     c.mscntPerRead = perRead;
+    c.usPerDatagram = 1100;
 }
 
 }  // namespace
 
 TEST(spinner_goes_on_from_a_chip_found_turning) {
-    Rig r(0, [](fake::Tmc2209& c) { turningChip(c, 140); });
+    Rig r(0, [](fake::Tmc2209& c) { turningChip(c, 122); });
     CHECK(r.driver.status().found == tessermotion::TmcFound::Turning);
     r.spinner.settings.speed = 100;
     r.spinner.run(true);  // as the stored state does, before Motion starts
@@ -205,7 +208,7 @@ TEST(spinner_goes_on_from_a_chip_found_turning) {
 }
 
 TEST(spinner_ramps_a_chip_found_turning_down_when_not_running) {
-    Rig r(0, [](fake::Tmc2209& c) { turningChip(c, 140); });
+    Rig r(0, [](fake::Tmc2209& c) { turningChip(c, 122); });
     r.tick();
     CHECK(r.spinner.state() == State::Stopping);
     CHECK(r.driver.enabled());
