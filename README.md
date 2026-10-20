@@ -14,6 +14,12 @@ Flash it, join the `fluante-xxxx` network from a phone, and the interface opens.
 
 Other Fluantes nearby show on the first page and under `/peers`.
 
+## Install and update
+
+The [launcher](https://leokeba.github.io/fluante-firmware/) reaches a Fluante by its address or over USB, and installs the firmware on a new board over USB (Chrome or Edge on a computer), then sets up its Wi-Fi. On a Mac, the bridge in each [release](https://github.com/leokeba/fluante-firmware/releases/latest) (`fluante-bridge-macos-arm64.zip` for Apple silicon, `-x64.zip` for Intel) lists the Fluantes on the network and serves the same launcher on localhost, in any browser. It isn't notarized: macOS asks once to open it (*System Settings*, *Privacy & Security*, *Open Anyway*). Without either, `fluante-esp32-factory.bin` goes at offset 0 over USB.
+
+Each push to `main` publishes a release. A Fluante online checks for a new one daily and shows it under System → Firmware (`/sys/firmware/github`), where `update` installs it over the air; an image that doesn't confirm itself rolls back.
+
 ## Build
 
 The libraries are checkouts next to this repository, at the commits [`deps.lock`](deps.lock) pins (`scripts/pin.sh` updates it): TesserAPI, TesserUI, NowTP, TesserKIT, TesserMotion.
