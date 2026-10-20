@@ -1,9 +1,10 @@
 #pragma once
 
 // The strobe's inrush limit (docs/DESIGN.md section 5.3): at power-up its
-// capacitor charges through a resistor; once it has, a MOSFET (GPIO 18)
-// bypasses the resistor. The old firmware closed it at the end of setup(),
-// about 1.5 to 2 s after power-up. Platform-free: the caller drives the pin.
+// capacitor charges through a resistor, the strobe dark; once it has, a
+// MOSFET (GPIO 18) bypasses the resistor and the strobe begins. Only at boot:
+// the supply may just have been plugged. Platform-free: the caller drives
+// the pin and begins the strobe.
 
 #include <stdint.h>
 

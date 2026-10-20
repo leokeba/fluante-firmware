@@ -65,7 +65,6 @@ void Spinner::update(uint64_t nowUs) {
                 return;
             }
             if (nowUs < coastUntilUs_) return;  // the sculpture still coasting
-            driver_.overrideCurrent(settings.settleCurrent);
             driver_.enable(true);
             sinceUs_ = nowUs;
             state_ = State::Settling;
@@ -77,12 +76,10 @@ void Spinner::update(uint64_t nowUs) {
             }
             if (!want_) {
                 driver_.enable(false);
-                driver_.overrideCurrent(0);
                 state_ = State::Stopped;
                 return;
             }
             if (nowUs - sinceUs_ >= static_cast<uint64_t>(settings.settleMs) * 1000) {
-                driver_.overrideCurrent(0);
                 state_ = State::Running;
                 // Every tick, so the deadman never runs out while turning.
                 driver_.setVelocity(microstepsPerSecond(settings.speed));
@@ -115,7 +112,6 @@ void Spinner::stop() {
 }
 
 void Spinner::halt() {
-    driver_.overrideCurrent(0);
     state_ = State::Halted;
 }
 

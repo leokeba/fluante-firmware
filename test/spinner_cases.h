@@ -54,22 +54,6 @@ TEST(spinner_starts_settles_and_ramps) {
     CHECK(near(r.vactual(), 56888.9f, 30));
 }
 
-TEST(spinner_settles_at_its_own_current) {
-    Rig r;
-    r.spinner.settings.settleCurrent = 0.03f;
-    r.spinner.run(true);
-    r.tick();
-    CHECK(near(r.driver.currentOverride(), 0.03, 1e-6));
-    r.run(1.1f);
-    CHECK(r.spinner.state() == State::Running);
-    CHECK_EQ(r.driver.currentOverride(), 0.0f);
-    // Without one, the run current.
-    Rig plain;
-    plain.spinner.run(true);
-    plain.tick();
-    CHECK_EQ(plain.driver.currentOverride(), 0.0f);
-}
-
 TEST(spinner_outlives_the_deadman) {
     Rig r;
     r.spinner.settings.acceleration = 0;
@@ -133,13 +117,11 @@ TEST(spinner_halts_on_stop_all_and_keeps_running) {
 
 TEST(spinner_halts_when_disabled_underneath) {
     Rig r;
-    r.spinner.settings.settleCurrent = 0.1f;
     r.spinner.run(true);
     r.tick();
     r.driver.enable(false);  // code isn't refused by the claim
     r.tick();
     CHECK(r.spinner.state() == State::Halted);
-    CHECK_EQ(r.driver.currentOverride(), 0.0f);
     r.run(1);
     CHECK(!r.driver.enabled());
     CHECK(r.set("/spinner/running", "true").status == tesser::Status::Ok);

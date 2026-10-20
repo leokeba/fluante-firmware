@@ -38,7 +38,10 @@ TEST(strobe_plan_slow_and_fast) {
 TEST(strobe_applies_on_begin) {
     FakePwm pwm;
     Strobe s(pwm, kStrobePin);
-    s.setDuty(10);  // stored only
+    // Dark until begin() (at boot, while the capacitor charges): stored only.
+    s.setDuty(10);
+    s.setOn(true);
+    CHECK_EQ(pwm.pin, -1);
     CHECK_EQ(pwm.timings, 0);
     CHECK_EQ(pwm.duties, 0);
     CHECK(s.begin());

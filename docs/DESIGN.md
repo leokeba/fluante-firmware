@@ -37,7 +37,7 @@ The old firmware's latest board ("new control board", caca2e2): a classic ESP32 
 | Part | Pins | Notes |
 |---|---|---|
 | TMC2209 | UART 2: RX 26, TX 25, 115200 baud; EN 13 (active low); MS1 14, MS2 27 (low: address 0); STEP 33, DIR 32 (held low, unused) | 0.11 Ω sense resistors (TesserMotion's default). |
-| Strobe | GPIO 19 | The LED driver's input. |
+| Strobe | GPIO 19 | The LED driver's input: low at power-up, the LEDC's from 2 s after the first tick (§5.3). |
 | GPIO 18 | low at power-up, high 2 s after the first tick (§5.3) | A MOSFET bypassing the resistor that limits the strobe capacitor's inrush current (Leo's recollection, 2026-10-19). |
 
 ## 4. Architecture
@@ -53,7 +53,7 @@ Only what is specific to a Fluante is here; the rest comes from the libraries, p
 | Piece | Does | Uses |
 |---|---|---|
 | `Strobe` | on, frequency, duty, with Fluante's defaults and resolution | TesserKIT's `PwmOutput` on `espPwm()` (the LEDC's high-speed timer 0 and channel 0, taken first); a fake `tesserkit::Pwm` in the tests |
-| `Inrush` | when to bypass the strobe capacitor's inrush resistor (§5.3) | nothing |
+| `Inrush` | when the strobe capacitor has charged: its inrush resistor bypassed, the strobe begun (§5.3) | nothing |
 | `Spinner` | a TesserMotion `Part`: start, ramp, stop, halts; the velocity in rpm | `Tmc2209` |
 | `tree.cpp`, `views.cpp` | the `/strobe` and `/spinner` trees, the sections' order and labels, the first page | TesserAPI, TesserUI |
 
@@ -73,7 +73,7 @@ Only what is specific to a Fluante is here; the rest comes from the libraries, p
 
 ### 5.2 Spinner
 
-- **Running** (`running`, stored): from stopped, the spinner waits for the driver to answer (`absent`), enables it, at `settleCurrent` if set (the driver's current override, not stored), waits `settle` at standstill (`settling`), then turns at `speed` through the driver's ramp (`running`). The velocity is renewed every tick, so the driver's deadman (1 s) never stops a running sculpture.
+- **Running** (`running`, stored): from stopped, the spinner waits for the driver to answer (`absent`), enables it, waits `settle` at standstill (`settling`), then turns at `speed` through the driver's ramp (`running`). The velocity is renewed every tick, so the driver's deadman (1 s) never stops a running sculpture.
 - **The driver's ramp** follows `acceleration` (rpm/s), written into `/driver/ramp/acceleration` in µsteps/s² every tick: that node shows the spinner's value. Speed changes, sign included, ramp through it (0 jumps). The driver's velocity is `rpm / 60 / ratio · stepsPerTurn · microsteps` µsteps/s; `rpm` reads the driver's ramped velocity back. Approximate: the TMC2209's clock isn't calibrated.
 - **stealthChop's start values** are the driver's stored PWM settings (`/driver/pwm/`), whose factory defaults here are the old preheat's `ofs` 255 and `grad` 14.
 - **The claim:** the spinner claims the driver at begin, so `/driver/enabled`, `velocity` and `stop` are readouts, refused with `busy`.
@@ -81,12 +81,12 @@ Only what is specific to a Fluante is here; the rest comes from the libraries, p
 - **Halts:** the driver disabled underneath (Motion's `stopAll()` during an update, the chip reset by a power loss) halts the spinner; `running` keeps what was asked, so it is stored as it was, and the sculpture turns again at the next power-up. Writing `running` (true or false) leaves the halt.
 - **A reset of the ESP32 alone** (its USB port, an update, a crash): the TMC2209 keeps its supply. A chip the driver finds still turning (`/driver/status/found` `turning`) is adopted at its measured speed, still enabled: the spinner skips the settle and ramps from there to `speed`, or down to a stop when `running` is off. One found `coasting` (moving with its power stage off, or its direction unknown) is configured disabled, and the spinner waits `start/coast` (10 s) before enabling it, so as not to brake a coasting sculpture.
 - **At power-up** the stored `running` starts the sculpture: a Fluante left on turns when plugged in, as the old firmware always did. A fresh one is off.
-- The old firmware's preheat settled at 30 mA before raising the current to 950 mA: `settleCurrent` 0.03 does the same; its default, 0, settles at the run current (§12).
+- The old firmware's preheat settled at 30 mA before raising the current to 950 mA; here the settle is at the run current. `settleCurrent`, which could do the same, was removed on 2026-10-20 (§13); a value stored by an older firmware is skipped at boot.
 - Factory defaults: 116 rpm (the old firmware's soft start ended there), 60 rpm/s, ratio 0.9, 200 steps, a 1 s settle at the run current; the driver at 256 microsteps, 0.95 A run and 0.5 A hold, stealthChop, PWM `ofs` 255 and `grad` 14.
 
 ### 5.3 Inrush
 
-At power-up the strobe's capacitor charges through a resistor that limits the inrush current; a MOSFET on GPIO 18 then bypasses it. The firmware holds GPIO 18 low from `app_main`, and drives it high 2 s after TesserKIT's first tick (`Inrush`, host-tested), about when the old firmware did: at the end of its `setup()`, after Wi-Fi and ESP-NOW's one-second wait. The strobe flashes meanwhile, as it did.
+At power-up the strobe's capacitor charges through a resistor that limits the inrush current; a MOSFET on GPIO 18 then bypasses it. The firmware holds GPIO 18 and the strobe's GPIO 19 low from `app_main`, so the capacitor charges with the strobe dark (Leo, 2026-10-20). 2 s after TesserKIT's first tick (`Inrush`, host-tested), it drives GPIO 18 high, then begins the strobe, which flashes from then on if `on`: the stored settings applied then, settings written before only stored (`applied/` reads zeros). Only at boot, when the supply may just have been plugged: turning the strobe off and on later is immediate. Every boot waits, a reset of the ESP32 alone included, since the firmware can't tell it from a power-up. The old firmware closed the MOSFET at about the same time, at the end of its `setup()`, but flashed meanwhile.
 
 ## 6. The tree
 
@@ -106,8 +106,8 @@ Persisted nodes are marked *(p)*. Writes to `/strobe` and `/spinner` need `User`
   speed (p)             −240–240 rpm
   acceleration (p)      0–600 rpm/s
   mechanics/ (p)        Admin, collapsed: ratio (0.01–100), stepsPerTurn (1–1000)
-  start/ (p)            Admin, collapsed: settle (0–10000 ms), settleCurrent (0–2 A, 0: the run current),
-                        coast (0–60000 ms, after a driver found coasting at boot)
+  start/ (p)            Admin, collapsed: settle (0–10000 ms), coast (0–60000 ms, after a driver found coasting at
+                        boot)
 /driver                 TesserMotion's TMC2209 tree (config, chopper, pwm, ramp, status, registers, map), group
                         "Hardware"; claimed by the spinner: enabled, velocity and stop are readouts
 /motion                 the control loop's statistics, group "Hardware"
@@ -135,7 +135,7 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 | The shared clock through `tesserkit::NowTp`: which node is the time reference (a setting, or chosen automatically), `networkTimeUs()` / `localTimeUs()`, the offset and round trip in `/sys/nowtp/status`. NowTP has `TimeSync`; TesserKIT never sets a reference, so nothing syncs. | TesserKIT (NowTP) | phase-synchronized strobes (§11, phase 3) | done, TesserKIT 6bd8608 on NowTP d2b515e (pinned): `auto` nodes elect a reference with no setting, every change applies at once. On the board (2026-10-19): NowTP starts once Wi-Fi is up (channel 4 here), synced about 15 s after boot to a nearby board elected reference. `NowTp::networkTimeUs()`, `localTimeUs()`, `timeSynced()`; `/sys/nowtp/time/` (reference `auto`, `this` or a MAC; interval; status). `auto` needs a NowTP change (asked of nowtp-9f). 100 µs unverified until measured on two boards. Crystals differ by ±20 ppm: a locked strobe needs its period trimmed continuously |
 | A velocity ramp on `Tmc2209` (acceleration, as `Tmc5160::Ramp` has in hardware): VACTUAL jumps can stall a motor. The spinner ramps itself meanwhile, as an application's part may. | TesserMotion | the spinner (§5.2) | done, TesserMotion 9d4cc2e (pinned): `Tmc2209::ramp.acceleration`, `actualVelocity()`; the spinner's own ramp dropped |
 | PWMCONF's fields as settings (`pwm_ofs`, `pwm_grad`, `pwm_autoscale`, `pwm_autograd`, `pwm_freq`, `freewheel`, `pwm_lim`, `pwm_reg`), stored; decoded fields for `TCOOLTHRS`, `SGTHRS`, `SG_RESULT`. Today only raw register writes, not stored: the spinner writes `pwm_ofs` and `pwm_grad` at each start. | TesserMotion | the start (§5.2), the old firmware's driver page | done, 9d4cc2e: `driver.pwm` stored at `/driver/pwm/`, `status/stallGuard`, decoded TCOOLTHRS, SGTHRS, SG_RESULT; the spinner's PWMCONF write dropped |
-| A current for a while (the old preheat's 30 mA settle), without changing the stored run current. | TesserMotion | the start (§12) | done, 9d4cc2e: `overrideCurrent()`, used by `settleCurrent` |
+| A current for a while (the old preheat's 30 mA settle), without changing the stored run current. | TesserMotion | the start (§12) | done, 9d4cc2e: `overrideCurrent()`, used by `settleCurrent` until its removal (2026-10-20, §13) |
 | Mounting a driver's tree without its controls (`enabled`, `velocity`, `stop`) when an application's part drives it. | TesserMotion | `/driver` beside `/spinner` | done differently, 9d4cc2e: `claim(owner)` turns the controls into readouts refusing writes with `busy` |
 | **`UartPort::read()` waits too little**: 10 ms is 1 tick at 100 Hz, which ends at the next tick, 0 to 10 ms away; reads straddling a tick time out, so `connect()`'s ~20 reads in a row rarely complete. Measured on the board: 59 of 300 back-to-back IOIN reads fail with 1 tick, none with 2 or 3. Fix: round up and add a tick | TesserMotion | the TMC2209 found at all (§10) | done, TesserMotion e257d60 (pinned): waits round up and add a tick; on the board, found at every boot |
 | **Changing microsteps while turning overspeeds the motor**: the ramp's velocity stays in µsteps/s of the old resolution, so 256 → 16 commands 16× the speed (≈ 945 rpm for 60) and 256 → 1 256×, ramping down at an acceleration converted with the new resolution (15 s, or minutes). Leo heard the stall on the board (2026-10-19); reproduced on the host. Asked: keep the physical speed through a change (or refuse it while turning); microsteps as a choice of powers of two (1 = full steps … 256) instead of an integer range | TesserMotion | `/driver/config/microsteps` | done, TesserMotion 3fc5cf5 (pinned): the ramp and the velocity rescaled with MRES in the same tick; `microsteps` a choice of "1" (full steps) … "256", a string through the API; the spinner computes with `driver.microsteps()`, the resolution in effect. Host-tested: 60 rpm kept within 0.1 rpm through 256 → 16, → 1, → 256 |
@@ -164,8 +164,7 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 
 ## 12. Open questions
 
-- GPIO 18 (§5.3): Leo thinks it bypasses the strobe capacitor's inrush resistor, not sure; 2 s is a guess from the old firmware's timing. To check on the board (the supply at power-up with and without the delay).
-- The old preheat settled at 30 mA, then raised the current to 950 mA: the driver sees no difference (§10.6), so `settleCurrent` stays 0 unless Leo hears or sees one.
+- GPIO 18 (§5.3): Leo thinks it bypasses the strobe capacitor's inrush resistor, not sure; 2 s of charging is Leo's (2026-10-20), first taken from the old firmware's timing. To check on the board (the supply at power-up with and without the delay).
 - Microsteps: with VACTUAL the chip makes the steps itself, so 256 costs nothing and is the smoothest; fewer (down to 1, full steps) only add noise and vibration. Since TesserMotion 3fc5cf5 a change keeps the speed.
 - At 116 rpm and 0.95 A stealthChop saturates (`pwm_scale_sum` 255): the motor supply's voltage, a lower current, or spreadCycle above some speed (`stealthChopMax`)?
 - The GitHub repository's name for releases: `leokeba/fluante-firmware` is assumed.
@@ -175,3 +174,5 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 - **Port onto TesserKIT and TesserMotion** (Leo, 2026-10-19): the latest pins; no step and direction; the strobe not tied to the rotation; phase sync later; Wi-Fi and NowTP only. Gaps to the libraries only with Leo's go-ahead.
 - **The strobe on the LEDC, not the MCPWM** (2026-10-19): ballet-photophonique's plan gives finer frequency steps (0.0007 Hz at 60 Hz against the old MCPWM's 0.0036 Hz at 1 µs) from 0.24 Hz up, where the old timer's 16 bits stopped at 15 Hz; the LEDC's `hpoint` can carry a phase later.
 - **`running` is stored** (2026-10-19): a Fluante left on turns when plugged in, as the old firmware always did; a fresh one is off, as TesserMotion's drivers boot.
+- **No settle current** (Leo, 2026-10-20): not needed; the driver saw no difference (§10.6). `settleCurrent` removed.
+- **The strobe dark while its capacitor charges, at boot only** (Leo, 2026-10-20): 2 s through the inrush resistor before the strobe begins, since the supply may just have been plugged; not when the strobe is turned off and on while running (§5.3).

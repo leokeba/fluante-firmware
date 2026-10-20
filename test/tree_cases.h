@@ -35,7 +35,7 @@ TEST(tree_persists_and_restores) {
         CHECK(r.set("/strobe", R"({"on":false,"frequency":72.25,"duty":1.5})").status == Status::Ok);
         CHECK(r.set("/spinner", R"({"speed":-90,"acceleration":20,"running":true})").status == Status::Ok);
         CHECK(r.set("/spinner/mechanics/ratio", "0.5").status == Status::Ok);
-        CHECK(r.set("/spinner/start", R"({"settle":250,"settleCurrent":0.03})").status == Status::Ok);
+        CHECK(r.set("/spinner/start", R"({"settle":250})").status == Status::Ok);
         CHECK(r.set("/driver/config/runCurrent", "0.95").status == Status::Ok);
         stored = r.api.persistedState();
     }
@@ -50,7 +50,15 @@ TEST(tree_persists_and_restores) {
     CHECK_EQ(r.spinner.settings.acceleration, 20.0f);
     CHECK_EQ(r.spinner.settings.ratio, 0.5f);
     CHECK_EQ(r.spinner.settings.settleMs, 250u);
-    CHECK(near(r.spinner.settings.settleCurrent, 0.03, 1e-6));
     CHECK(r.spinner.running());  // turns again at power-up
     CHECK(near(r.driver.settings.runCurrent, 0.95, 1e-6));
+}
+
+TEST(tree_skips_the_old_settle_current) {
+    // Stored by firmware before 2026-10-20: the rest still applies.
+    Rig r;
+    std::vector<std::string> skipped;
+    CHECK(r.api.restore(R"({"spinner":{"start":{"settle":250,"settleCurrent":0.03}}})", &skipped) == Status::Ok);
+    CHECK_EQ(skipped.size(), 1u);
+    CHECK_EQ(r.spinner.settings.settleMs, 250u);
 }

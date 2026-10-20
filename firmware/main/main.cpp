@@ -3,9 +3,9 @@
 // TesserMotion for the TMC2209; this repository's strobe and spinner.
 //
 // Flash it, join the "fluante-xxxx" network from a phone, and the interface
-// opens. A fresh Fluante boots with its motor off and its strobe on: check
-// the motor's current (/driver/config/runCurrent), then turn
-// /spinner/running on.
+// opens. A fresh Fluante boots with its motor off and its strobe on (once
+// its capacitor has charged, 2 s): check the motor's current
+// (/driver/config/runCurrent), then turn /spinner/running on.
 // While on, it turns again at every power-up.
 //
 // For development, a gitignored main/secrets.h may define WIFI_SSID and
@@ -65,7 +65,10 @@ extern "C" void app_main() {
     gpio.output(board::kTmcMs2, false);
     gpio.output(board::kTmcStep, false);
     gpio.output(board::kTmcDir, false);
-    gpio.output(board::kInrushBypass, false);  // the strobe's capacitor charges through its resistor
+    // At power-up the strobe's capacitor charges through its resistor, the
+    // strobe dark until it has (section 5.3).
+    gpio.output(board::kInrushBypass, false);
+    gpio.output(board::kStrobe, false);
 
     // Factory defaults, until the stored settings say otherwise: the old
     // firmware's 256 microsteps and 0.95 A.
@@ -90,17 +93,19 @@ extern "C" void app_main() {
         if (s == tesserkit::State::Updating) motion.stopAll();
     });
     // The strobe's duty waiting for the end of a period, in TesserKIT's task
-    // under the API lock, as its setters are; the inrush resistor bypassed
-    // once the capacitor has charged.
+    // under the API lock, as its setters are. Once the capacitor has charged,
+    // its resistor bypassed and the strobe begun: only at boot, so turning it
+    // on and off later is immediate.
     dev.onTick([&api](uint32_t nowMs) {
-        if (inrush.update(nowMs)) defaultGpio().set(board::kInrushBypass, true);
+        bool charged = inrush.update(nowMs);
+        if (charged) defaultGpio().set(board::kInrushBypass, true);
         tesser::Lock lock(api);
+        if (charged) strobe.begin();
         strobe.poll();
     });
 
     dev.cors("https://leokeba.github.io");  // the launchers (its own, TesserKIT's), reaching it by its address
     dev.begin();  // loads the stored settings
-    strobe.begin();
     serialApi.begin();
     motion.start(50);
 }

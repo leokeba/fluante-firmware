@@ -82,11 +82,6 @@ void describe(Object& o, Spinner& sp) {
                       .doc("What starting does before turning")
                       .ui("collapsed");
     setting(start, "settle", sp, s.settleMs).range(0, 10000).unit("ms").doc("At standstill after enabling");
-    setting(start, "settleCurrent", sp, s.settleCurrent)
-        .range(0, 2)
-        .step(0.01)
-        .unit("A")
-        .doc("rms while settling; 0: the run current. The old firmware settled at 0.03");
     setting(start, "coast", sp, s.coastMs)
         .range(0, 60000)
         .unit("ms")
