@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 
+#include "fluante/phase_lock.h"
 #include "tesserkit/pwm.h"
 
 namespace fluante {
@@ -50,6 +51,10 @@ public:
     double pulseUs() const { return out_.pulseUs(); }
     int pin() const { return out_.pin(); }
 
+    // Its lock to network time (section 5.4).
+    PhaseLock& lock() { return lock_; }
+    const PhaseLock& lock() const { return lock_; }
+
     // Applies a duty waiting for the end of its period; often, under the API
     // lock.
     void poll() { pwm_.poll(); }
@@ -57,6 +62,7 @@ public:
 private:
     tesserkit::Pwm& pwm_;
     tesserkit::PwmOutput out_;
+    PhaseLock lock_;
 };
 
 }  // namespace fluante

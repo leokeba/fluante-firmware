@@ -35,6 +35,31 @@ void describe(Object& o, Strobe& s) {
     applied.value("frequency", [&s] { return s.timing().frequency; }).unit("Hz").ui("precision", 4).watch();
     applied.value("pulse", [&s] { return s.pulseUs(); }).unit("µs").ui("precision", 0).watch();
     applied.value("bits", [&s] { return s.timing().bits; }).unit("bits").ui("advanced").watch();
+
+    PhaseLock& lock = s.lock();
+    auto& sync = o.object("sync").label("Sync").doc("Flashes at the same instants as the Fluantes nearby at the same "
+                                                    "frequency, on NowTP's network time");
+    sync.value("on", [&lock] { return lock.enabled(); }, [&lock](bool v) { lock.setEnabled(v); })
+        .persist()
+        .doc("Off runs the timer free, at the frequency alone");
+    sync.value("state", [&lock] { return lock.state(); }, {"off", "waiting", "acquiring", "locked"})
+        .watch()
+        .doc("waiting: no network time yet, or the strobe not begun. acquiring: steering toward the network's "
+             "periods; at the first lock the period restarts once");
+    sync.value("error", [&lock] { return lock.errorUs(); })
+        .unit("µs")
+        .ui("precision", 0)
+        .watch()
+        .doc("When the strobe's period began, after the network's: positive when late");
+    sync.value("trim", [&s, &lock] {
+            uint32_t d = s.timing().divider;
+            return d ? lock.trim() / static_cast<double>(d) * 1e6 : 0.0;
+        })
+        .unit("ppm")
+        .ui("precision", 1)
+        .ui("advanced")
+        .watch()
+        .doc("The period lengthened by, to match the network's clock");
     o.value("gpio", [&s] { return s.pin(); }).label("GPIO").ui("advanced");
 }
 

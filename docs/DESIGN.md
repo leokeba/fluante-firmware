@@ -69,7 +69,7 @@ Only what is specific to a Fluante is here; the rest comes from the libraries, p
 - `on`, `frequency` (1–1000 Hz) and `duty` (0–100 %) apply at once: a duty at the end of the current period, a frequency by retiming the LEDC (a new period starts when its resolution changes).
 - The LEDC is planned at 12 bits: from APB (80 MHz) down to about 19 Hz, from the 1 MHz reference tick below it, down to 0.24 Hz. At 60 Hz, the frequency moves in steps of about 0.0007 Hz and the pulse in steps of 4 µs. `applied/` shows the actual frequency and the pulse's length.
 - Factory defaults are the old firmware's: on, 60.01 Hz, 3 %.
-- *(later)* A phase, set from NowTP's shared clock (§9).
+- Locked to NowTP's network time while `sync/on`, so Fluantes at the same frequency flash together (§5.4).
 
 ### 5.2 Spinner
 
@@ -88,6 +88,17 @@ Only what is specific to a Fluante is here; the rest comes from the libraries, p
 
 At power-up the strobe's capacitor charges through a resistor that limits the inrush current; a MOSFET on GPIO 18 then bypasses it. The firmware holds GPIO 18 and the strobe's GPIO 19 low from `app_main`, so the capacitor charges with the strobe dark (Leo, 2026-10-20). 2 s after TesserKIT's first tick (`Inrush`, host-tested), it drives GPIO 18 high, then begins the strobe, which flashes from then on if `on`: the stored settings applied then, settings written before only stored (`applied/` reads zeros). Only at boot, when the supply may just have been plugged: turning the strobe off and on later is immediate. Every boot waits, a reset of the ESP32 alone included, since the firmware can't tell it from a power-up. The old firmware closed the MOSFET at about the same time, at the end of its `setup()`, but flashed meanwhile.
 
+### 5.4 Sync
+
+Fluantes asked the same frequency plan the same timer (§5.1), so the same period P. With `sync/on` (stored, on by default) each one's periods begin at whole multiples of P in NowTP's network time (§9), the same instants on all of them; a lone Fluante locks to its own clock, NowTP's reference. `PhaseLock` (host-tested) does it, in TesserKIT's tick under the API lock:
+
+- **Measuring**, once a second: the LEDC's counter and the local clock read together, NowTP's offset (network minus local), so when the current period began in network time, and its distance to the nearest multiple of P: the error, positive when late. The counter is taken at the middle of its count (a count is 4 µs at 60 Hz, 244 µs at 1 Hz).
+- **The first lock** (at boot once NowTP has synced, after a new frequency or resolution, after `sync/on`): an error over 200 µs restarts the timer's period at the first multiple of P at least 30 ms ahead (Leo, 2026-10-21): one irregular flash, then in phase within the restart's jitter.
+- **Steering**: a PI loop on the error (10 s, its integral 40 s: critically damped) trims the divider, the counter running on (§4.1). The integral learns the crystal's offset (±20 ppm: about 1.7 divider steps at 60 Hz). The trim is fractional, dithered over the 20 ms ticks between whole steps (first-order sigma-delta), since a step is 12 ppm at 60 Hz but 200 ppm at 1 kHz; it is held to ±64 steps.
+- **Bad rounds**: NowTP's single rounds off by ~120 µs until the next are filtered by the loop's 10 s; a sample over 1 ms off (or an eighth of P) is set aside, and three in a row (the network time jumped: a new reference) start the lock over, with a restart.
+- **Without network time** (NowTP not synced) or before the strobe has begun: `waiting`, the trim held. Off: no trim.
+- In the host simulation (a crystal ±20 ppm off, NowTP's noise): locked within a minute, within 10 µs without noise, two Fluantes within 100 µs with ±90 µs of noise on every sample.
+
 ## 6. The tree
 
 Persisted nodes are marked *(p)*. Writes to `/strobe` and `/spinner` need `User`; TesserKIT's Auth leaves everyone Admin until an admin account exists.
@@ -98,6 +109,8 @@ Persisted nodes are marked *(p)*. Writes to `/strobe` and `/spinner` need `User`
   frequency (p)         1–1000 Hz, step 0.001
   duty (p)              0–100 %, step 0.1
   applied/              ui.inline, read-only, watched: frequency (Hz, actual), pulse (µs), bits (advanced)
+  sync/                 label "Sync": on (p, bool, true); state (off | waiting | acquiring | locked, watched);
+                        error (µs, watched); trim (ppm, advanced, watched)
   gpio                  read-only, advanced
 /spinner                label "Rotation", ui.icon motor
   running (p)           bool, watched
@@ -142,6 +155,7 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 | **A chip still turning at boot is stopped abruptly**: when only the ESP32 resets (its USB port opened, an update), the TMC2209 keeps its supply and turns on; `begin()` drives EN high and configures it disabled, then the spinner enables it at standstill while the sculpture coasts: a horrible noise before the ramp (Leo, 2026-10-19). Asked: resume a chip found turning (kept power, `stst` 0) at its measured velocity, and say so, so the spinner skips its settle | TesserMotion | every reset of the ESP32 (§5.2) | done, TesserMotion df517a7: `status/found` stopped, turning (adopted) or coasting; the spinner follows it. On the board an RTS reset gave `coasting` at 30 and 116 rpm (no noise: the coast wait), not `turning`: likely the module pulls ENN up while the ESP's pins float. Then 8a4f137 (pinned): `status/coasting` says why (stageOff, enablePinHigh, stepDir, directionUnknown), and the direction is told from the speed and the time between MSCNT reads, so a fast motor isn't adopted the wrong way. Asked next: holding the EN pad through software resets |
 | Diagnostics for an absent chip: failed connects counted, the last reason (no reply, echo only, bad CRC, wrong version) | TesserMotion | `/driver/status` | done, 9d4cc2e: every failed transfer counted, `status/lastError` |
 | A precise LEDC output (ballet-photophonique's `plan()` and `pwm_esp.cpp`, copied here before), with a phase *(later)*. | TesserKIT | the strobe (§5.1); shared with ballet-photophonique | done, TesserKIT 2536928 (pinned at e08bf49; `tesserkit/pwm.h`: `pwm::plan(chip, …)`, `Pwm`, `espPwm()`, `PwmOutput`); the strobe is on it, the copy removed. As asked: `plan()` per chip, a `Pwm` platform interface with a fake, an output class (frequency, duty, resolution, on; applied timing, counts, pulse), no tree; LEDC timers from the bottom up; the phase *(later)* |
+| Where an LEDC output is in its period (its counter and the local clock read together); a trim of its divider in whole steps from the plan, the counter running on, the planned timing still readable; its period restarted at a local instant (the first lock). Sent 2026-10-21 to tesserkit-f1, with Leo's go-ahead. | TesserKIT | the sync (§5.4) | asked; `PhaseLock` built and host-tested meanwhile, wired once it lands |
 
 ## 10. Testing
 
@@ -160,7 +174,7 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 |---|---|---|
 | 1 *(host-tested)* | Strobe, spinner, trees, first page; Wi-Fi, NowTP, updates | Host tests; the firmware on the board: the strobe measured, the sculpture turning, a setting written to another Fluante under `/peers` |
 | 2 | Releases and the launcher on GitHub Pages (`.github/workflows/release.yml`, `pages/`) once the repository is on GitHub | A release installed from `/sys/firmware/github` |
-| 3 | Phase-synchronized strobes on NowTP's shared clock (§9): the strobe's period steered slowly (the LEDC's fractional divider, no timer reset) toward flashes at whole periods of network time, so single bad rounds are filtered rather than followed | Two Fluantes' strobes within 100 µs of each other on a scope, median; a GPIO edge between two units (nowtp-9f offers the firmware) |
+| 3 *(building)* | Phase-synchronized strobes on NowTP's shared clock (§5.4, §9): a restart of the period at the first lock, then the period steered slowly (the LEDC's fractional divider, the counter running on) toward flashes at whole periods of network time, so single bad rounds are filtered rather than followed | Two Fluantes' strobes within 100 µs of each other on a scope, median; a GPIO edge between two units (nowtp-9f offers the firmware) |
 
 ## 12. Open questions
 
@@ -176,3 +190,4 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 - **`running` is stored** (2026-10-19): a Fluante left on turns when plugged in, as the old firmware always did; a fresh one is off, as TesserMotion's drivers boot.
 - **No settle current** (Leo, 2026-10-20): not needed; the driver saw no difference (§10.6). `settleCurrent` removed.
 - **The strobe dark while its capacitor charges, at boot only** (Leo, 2026-10-20): 2 s through the inrush resistor before the strobe begins, since the supply may just have been plugged; not when the strobe is turned off and on while running (§5.3).
+- **Sync: a restart at the first lock, then steering** (Leo, 2026-10-21): in phase within seconds, one irregular flash, rather than up to ~50 s of the pattern sliding at a 1 % pull. The lock is built here; TesserKIT gives the LEDC's counter, a trim and a timed restart (§9).

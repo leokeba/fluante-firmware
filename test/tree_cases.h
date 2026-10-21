@@ -33,6 +33,7 @@ TEST(tree_persists_and_restores) {
     {
         Rig r;
         CHECK(r.set("/strobe", R"({"on":false,"frequency":72.25,"duty":1.5})").status == Status::Ok);
+        CHECK(r.set("/strobe/sync/on", "false").status == Status::Ok);
         CHECK(r.set("/spinner", R"({"speed":-90,"acceleration":20,"running":true})").status == Status::Ok);
         CHECK(r.set("/spinner/mechanics/ratio", "0.5").status == Status::Ok);
         CHECK(r.set("/spinner/start", R"({"settle":250})").status == Status::Ok);
@@ -46,6 +47,7 @@ TEST(tree_persists_and_restores) {
     CHECK(!r.strobe.on());
     CHECK_EQ(r.strobe.frequency(), 72.25);
     CHECK_EQ(r.strobe.duty(), 1.5f);
+    CHECK(!r.strobe.lock().enabled());
     CHECK_EQ(r.spinner.settings.speed, -90.0f);
     CHECK_EQ(r.spinner.settings.acceleration, 20.0f);
     CHECK_EQ(r.spinner.settings.ratio, 0.5f);
@@ -61,4 +63,14 @@ TEST(tree_skips_the_old_settle_current) {
     CHECK(r.api.restore(R"({"spinner":{"start":{"settle":250,"settleCurrent":0.03}}})", &skipped) == Status::Ok);
     CHECK_EQ(skipped.size(), 1u);
     CHECK_EQ(r.spinner.settings.settleMs, 250u);
+}
+
+TEST(tree_sync) {
+    Rig r;
+    CHECK_EQ(r.get("/strobe/sync/on").body, "true");
+    CHECK_EQ(r.get("/strobe/sync/state").body, "\"waiting\"");
+    CHECK(r.set("/strobe/sync/on", "false").status == Status::Ok);
+    CHECK(!r.strobe.lock().enabled());
+    CHECK_EQ(r.get("/strobe/sync/state").body, "\"off\"");
+    CHECK_EQ(r.get("/strobe/sync/trim").body, "0");
 }
