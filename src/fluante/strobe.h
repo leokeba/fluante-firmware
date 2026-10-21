@@ -38,6 +38,10 @@ public:
 
     // Attaches the pin and applies the settings. Before it, setters only store.
     bool begin() { return out_.begin(); }
+    // Gives the pin back, left low, its settings kept: the layers take it
+    // (section 5.5). Its lock waits until begin() again.
+    void end() { out_.end(); }
+    bool begun() const { return out_.begun(); }
 
     bool on() const { return out_.on(); }
     float duty() const { return out_.duty(); }             // percent

@@ -4,6 +4,8 @@
 // docs/DESIGN.md.
 
 #include "fluante/inrush.h"
+#include "fluante/layers.h"
+#include "fluante/network_clock.h"
 #include "fluante/phase_lock.h"
 #include "fluante/spinner.h"
 #include "fluante/strobe.h"

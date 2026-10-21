@@ -1,6 +1,6 @@
 // Fluante (docs/DESIGN.md): TesserKIT for Wi-Fi, updates, files, accounts,
 // the log and the Fluantes nearby over ESP-NOW (NowTP) under /peers;
-// TesserMotion for the TMC2209; this repository's strobe and spinner.
+// TesserMotion for the TMC2209; this repository's strobe, layers and spinner.
 //
 // Flash it, join the "fluante-xxxx" network from a phone, and the interface
 // opens. A fresh Fluante boots with its motor off and its strobe on (once
@@ -42,9 +42,11 @@ Motion motion;
 
 fluante::Spinner spinner(driver);
 fluante::Strobe strobe(tesserkit::espPwm(), board::kStrobe);
+fluante::Layers layers(tesserkit::espPulses(), board::kStrobe);  // the strobe's pin, while on (section 5.5)
 fluante::Inrush inrush;
 
-// Network time minus local time, once NowTP has synchronized (section 5.4).
+// Network time minus local time, once NowTP has synchronized (sections 5.4
+// and 5.5).
 bool networkOffset(int64_t& offsetUs) {
     if (!espNow.timeSynced()) return false;
     uint64_t network = espNow.networkTimeUs();
@@ -92,7 +94,7 @@ extern "C" void app_main() {
     motion.add(driver);
 
     auto& api = dev.api();
-    fluante::mountTree(api, strobe, spinner, driver, motion);
+    fluante::mountTree(api, strobe, layers, spinner, driver, motion);
     static tesserui::Views views(api);
     fluante::addViews(views);
 
@@ -100,18 +102,20 @@ extern "C" void app_main() {
     dev.onState([](tesserkit::State s) {
         if (s == tesserkit::State::Updating) motion.stopAll();
     });
-    // The strobe's duty waiting for the end of a period, and its lock to
-    // network time, in TesserKIT's task under the API lock, as its setters
-    // are. Once the capacitor has charged, its resistor bypassed and the
-    // strobe begun: only at boot, so turning it on and off later is immediate.
+    // The strobe's duty waiting for the end of a period, the layers, and
+    // their locks to network time, in TesserKIT's task under the API lock, as
+    // their setters are. Once the capacitor has charged, its resistor
+    // bypassed and the strobe or the layers begun (route()): only at boot,
+    // so turning them on and off later is immediate.
     dev.onTick([&api](uint32_t nowMs) {
         static const fluante::Strobe::NetworkOffset offset = networkOffset;
         bool charged = inrush.update(nowMs);
         if (charged) defaultGpio().set(board::kInrushBypass, true);
         tesser::Lock lock(api);
-        if (charged) strobe.begin();
+        if (inrush.bypassed()) fluante::route(strobe, layers);
         strobe.poll();
         strobe.sync(nowMs, offset);
+        layers.poll(nowMs, offset);
     });
 
     dev.cors("https://leokeba.github.io");  // the launchers (its own, TesserKIT's), reaching it by its address

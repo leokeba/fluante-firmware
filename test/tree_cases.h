@@ -1,4 +1,4 @@
-// The /strobe and /spinner trees (docs/DESIGN.md section 6): validation and
+// The /strobe, /layers and /spinner trees (docs/DESIGN.md section 6): validation and
 // persistence.
 #pragma once
 
@@ -73,4 +73,33 @@ TEST(tree_sync) {
     CHECK(!r.strobe.lock().enabled());
     CHECK_EQ(r.get("/strobe/sync/state").body, "\"off\"");
     CHECK_EQ(r.get("/strobe/sync/trim").body, "0");
+}
+
+TEST(tree_layers) {
+    std::string stored;
+    {
+        Rig r;
+        CHECK_EQ(r.get("/layers/on").body, "false");
+        CHECK_EQ(r.get("/layers/sync/state").body, "\"waiting\"");
+        CHECK_EQ(r.layers.list.size(), 1u);
+        CHECK(r.set("/layers/list/0/phase", "400").status == Status::InvalidValue);
+        CHECK(r.set("/layers/list/0/frequency", "0.5").status == Status::InvalidValue);
+        CHECK(r.set("/layers/list",
+                    R"([{"on":true,"frequency":60.01,"phase":0,"duty":3},{"on":true,"frequency":30,"phase":90,"duty":1}])")
+                  .status == Status::Ok);
+        CHECK_EQ(r.layers.list.size(), 2u);
+        CHECK(r.set("/layers/list", R"([{},{},{},{},{},{},{},{},{}])").status != Status::Ok);  // past 8
+        CHECK_EQ(r.layers.list.size(), 2u);
+        CHECK(r.set("/layers", R"({"on":true})").status == Status::Ok);
+        CHECK(r.set("/layers/sync/on", "false").status == Status::Ok);
+        stored = r.api.persistedState();
+    }
+    Rig r;
+    CHECK(r.api.restore(stored) == Status::Ok);
+    CHECK(r.layers.on());
+    CHECK(!r.layers.clock().enabled());
+    CHECK_EQ(r.layers.list.size(), 2u);
+    CHECK_EQ(r.layers.list[1].frequency, 30.0);
+    CHECK_EQ(r.layers.list[1].phase, 90.0f);
+    CHECK_EQ(r.layers.list[1].duty, 1.0f);
 }

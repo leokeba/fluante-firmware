@@ -1,4 +1,4 @@
-// The /strobe and /spinner trees (docs/DESIGN.md section 6).
+// The /strobe, /layers and /spinner trees (docs/DESIGN.md section 6).
 #include "fluante/tree.h"
 
 #include "tesser/status.h"
@@ -63,6 +63,73 @@ void describe(Object& o, Strobe& s) {
     o.value("gpio", [&s] { return s.pin(); }).label("GPIO").ui("advanced");
 }
 
+void describe(Object& o, Layers& l) {
+    o.writeAccess(Access::User);
+    o.value("on", [&l] { return l.on(); }, [&l](bool v) { l.setOn(v); })
+        .persist()
+        .doc("Takes the LED from the strobe: the layers flash it instead, while on");
+    o.value("active", [&l] { return l.begun(); })
+        .watch()
+        .doc("Driving the LED. On but not active: the capacitor still charging at boot, or the output refused "
+             "(see the log)");
+    o.list("list", l.list,
+           [](Object& e, Layer& v) {
+               e.value("on", v.on).doc("Off leaves this layer out");
+               e.value("frequency", v.frequency)
+                   .range(Layers::kLowestHz, Layers::kHighestHz)
+                   .step(0.001)
+                   .unit("Hz")
+                   .doc("Flashes per second");
+               e.value("phase", v.phase)
+                   .range(0, 360)
+                   .step(0.1)
+                   .unit("°")
+                   .doc("Where in its period the flash begins: Fluantes asked the same flash together");
+               e.value("duty", v.duty)
+                   .range(0, 100)
+                   .step(0.1)
+                   .unit("%")
+                   .doc("The share of each period this layer lights the LED");
+           })
+        .maxSize(Layers::kMax)
+        .persist()
+        .label("Layers")
+        .doc("The LED is lit while any layer is: overlapping flashes are not brighter");
+
+    NetworkClock& clock = l.clock();
+    auto& sync = o.object("sync").label("Sync").doc("The layers' periods counted from NowTP's network time, so the "
+                                                    "Fluantes nearby asked the same layers flash together");
+    sync.value("on", [&clock] { return clock.enabled(); }, [&clock](bool v) { clock.setEnabled(v); })
+        .persist()
+        .doc("Off counts the periods on this Fluante's own clock");
+    sync.value("state", [&clock] { return clock.state(); }, {"off", "waiting", "acquiring", "locked"})
+        .watch()
+        .doc("waiting: no network time yet. acquiring: steering toward the network's time; at the first lock "
+             "the layers jump to it once");
+    sync.value("error", [&clock] { return clock.errorUs(); })
+        .unit("µs")
+        .ui("precision", 0)
+        .watch()
+        .doc("This Fluante's time behind the network's: positive when late");
+    sync.value("rate", [&clock] { return clock.ppm(); })
+        .unit("ppm")
+        .ui("precision", 1)
+        .ui("advanced")
+        .watch()
+        .doc("This Fluante's clock sped up by, to match the network's");
+
+    auto& out = o.object("output").label("Output").doc("The timer's alarms that drive the LED").ui("advanced");
+    out.value("edges", [&l] { return l.stats().edges; }).watch().doc("The LED's changes");
+    out.value("late", [&l] { return l.stats().late; })
+        .watch()
+        .doc("Alarms answered more than 20 µs late: their edges were that late");
+    out.value("worstLate", [&l] { return l.stats().worstLateUs; })
+        .label("Worst late")
+        .unit("µs")
+        .watch();
+    o.value("gpio", [&l] { return l.pin(); }).label("GPIO").ui("advanced");
+}
+
 void describe(Object& o, Spinner& sp) {
     o.writeAccess(Access::User);
     Spinner::Settings& s = sp.settings;
@@ -114,9 +181,10 @@ void describe(Object& o, Spinner& sp) {
              "the sculpture to stop before enabling it");
 }
 
-void mountTree(tesser::Api& api, Strobe& strobe, Spinner& spinner, tessermotion::Tmc2209& driver,
+void mountTree(tesser::Api& api, Strobe& strobe, Layers& layers, Spinner& spinner, tessermotion::Tmc2209& driver,
                tessermotion::Motion& motion) {
     api.mount("strobe", strobe).label("Strobe").ui("icon", "bulb");
+    api.mount("layers", layers).label("Layers").ui("icon", "layers");
     api.mount("spinner", spinner).label("Rotation").ui("icon", "motor");
     api.mount("driver", driver).label("Motor driver").ui("icon", "motor").ui("group", "Hardware");
     api.mount("motion", motion).label("Control loop").ui("icon", "chart").ui("group", "Hardware");

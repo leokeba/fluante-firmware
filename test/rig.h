@@ -1,19 +1,25 @@
-// A Fluante on the host: the strobe on a fake LEDC, the spinner on
+// A Fluante on the host: the strobe on a fake LEDC, the layers on a fake
+// alarm running TesserKIT's engine on the rig's clock, the spinner on
 // TesserMotion's fake TMC2209 behind a fake UART, the tree, and a clock ticked
 // at 50 Hz as the Motion task would.
 #pragma once
 
 #include <math.h>
 
+#include <stdint.h>
+
 #include <functional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 #include <ArduinoJson.h>
 
 #include "Fluante.h"
 #include "TesserAPI.h"
 #include "TesserMotion.h"
+#include "tesserkit/pulses.h"
 #include "tesserkit/pwm.h"
 #include "check.h"
 #include "fake_hw.h"
@@ -38,9 +44,16 @@ struct FakePwm : tesserkit::Pwm {
     int duties = 0;
 
     const tesserkit::pwm::Chip& chip() const override { return tesserkit::pwm::kEsp32; }
+    bool attached = false;
+    int detaches = 0;
     int attach(int p) override {
         pin = p;
+        attached = attachOk;
         return attachOk ? 0 : -1;
+    }
+    void detach(int) override {
+        attached = false;
+        detaches++;
     }
     void timing(int, const tesserkit::pwm::Timing& t) override {
         timed = t;
@@ -68,9 +81,82 @@ struct FakePwm : tesserkit::Pwm {
     }
 };
 
+
+// The layers' alarm: TesserKIT's engine stepped at each alarm on a clock the
+// rig moves, the pin's edges recorded.
+struct FakePulses : tesserkit::Pulses {
+    tesserkit::pulses::Engine engine;
+    bool beginOk = true;
+    bool taken = false;
+    int pin = -1;
+    int begins = 0, ends = 0;
+    int64_t clock = 1000000;
+    bool armed = false;
+    int64_t alarm = 0;
+    bool level = false;
+    std::vector<std::pair<int64_t, bool>> edges;
+
+    bool begin(int p) override {
+        begins++;
+        if (!beginOk || taken) return false;
+        taken = true;
+        pin = p;
+        engine.clear();
+        engine.stats = tesserkit::pulses::Stats();
+        armed = false;
+        return true;
+    }
+    void end() override {
+        ends++;
+        taken = false;
+        armed = false;
+        engine.clear();
+        set(false, clock);
+    }
+    int64_t nowUs() override { return clock; }
+    void install(const tesserkit::pulses::Plan& p) override {
+        if (!taken) return;
+        engine.install(p, clock);
+        step(clock, clock);
+    }
+    tesserkit::pulses::Stats stats() override { return engine.stats; }
+    void resetStats() override { engine.stats = tesserkit::pulses::Stats(); }
+
+    void step(int64_t now, int64_t due) {
+        int64_t next = 0;
+        set(engine.advance(now, due, next), now);
+        armed = next != INT64_MAX;
+        if (armed) alarm = next;
+    }
+    void set(bool l, int64_t at) {
+        if (l == level) return;
+        level = l;
+        edges.emplace_back(at, l);
+    }
+    // The clock to `untilUs`, the alarms answered on time on the way.
+    void run(int64_t untilUs) {
+        while (armed && alarm <= untilUs) {
+            clock = alarm;
+            engine.stats.alarms++;
+            step(clock, alarm);
+        }
+        clock = untilUs;
+    }
+    // The rising edges since `fromUs`.
+    std::vector<int64_t> rises(int64_t fromUs) const {
+        std::vector<int64_t> r;
+        for (const auto& e : edges) {
+            if (e.second && e.first >= fromUs) r.push_back(e.first);
+        }
+        return r;
+    }
+};
+
 struct Rig {
     FakePwm pwm;
     fluante::Strobe strobe{pwm, kStrobePin};
+    FakePulses pulses;
+    fluante::Layers layers{pulses, kStrobePin};
     fake::Gpio gpio;
     fake::Uart uart;
     fake::Tmc2209 chip;
@@ -94,7 +180,7 @@ struct Rig {
         driver.settings.microsteps = 256;
         motion.add(spinner);
         motion.add(driver);
-        fluante::mountTree(api, strobe, spinner, driver, motion);
+        fluante::mountTree(api, strobe, layers, spinner, driver, motion);
         motion.begin();
         strobe.begin();
         run(idle);

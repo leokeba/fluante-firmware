@@ -22,3 +22,8 @@ CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 # The console's UART also carries the API (the launcher's USB way): the
 # launcher skips log lines, but one written in the middle of a reply breaks it.
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+# The layers' alarm drives the LED from IRAM, so a flash write can't hold a
+# flash on for tens of milliseconds (TesserKIT's PulseOutput refuses to start
+# without these; docs/DESIGN.md section 5.5).
+CONFIG_GPTIMER_ISR_CACHE_SAFE=y
+CONFIG_GPTIMER_CTRL_FUNC_IN_IRAM=y

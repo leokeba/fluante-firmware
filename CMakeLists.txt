@@ -1,6 +1,8 @@
 # Fluante's code: an ESP-IDF component when built by idf.py (the firmware in
 # firmware/ adds this directory), host library + tests otherwise.
 set(FLUANTE_SRCS
+    src/fluante/layers.cpp
+    src/fluante/network_clock.cpp
     src/fluante/phase_lock.cpp
     src/fluante/spinner.cpp
     src/fluante/strobe.cpp
