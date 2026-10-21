@@ -100,6 +100,10 @@ Fluantes asked the same frequency plan the same timer (§5.1), so the same perio
 - A restart is a GPTimer alarm in TesserKIT, its handler not in IRAM: a flash write (a settings save) delays it, and the next samples see the period off and start over.
 - In the host simulation (a crystal ±20 ppm off, NowTP's noise): locked within a minute, within 10 µs without noise, two Fluantes within 100 µs with ±90 µs of noise on every sample.
 
+### 5.5 Layers *(later)*
+
+Two or more strobes on the one LED driver (Leo, 2026-10-21): each layer its own frequency, phase and pulse, the output lit while any layer is (their union: the driver is on or off, so an overlap is not brighter). The ESP32 gives a pin one peripheral's signal, so the LEDC's channels can't share GPIO 19; a scheduler of TesserKIT's (§9) drives it instead, its edges at instants of a time base Fluante gives it: NowTP's network time, filtered, so layers asked the same on several Fluantes flash together with no restart or trim of a timer. A layer's pulses begin at network times n·P + phase. The LEDC strobe (§5.1, §5.4) stays: one or the other owns the pin.
+
 ## 6. The tree
 
 Persisted nodes are marked *(p)*. Writes to `/strobe` and `/spinner` need `User`; TesserKIT's Auth leaves everyone Admin until an admin account exists.
@@ -113,6 +117,7 @@ Persisted nodes are marked *(p)*. Writes to `/strobe` and `/spinner` need `User`
   sync/                 label "Sync": on (p, bool, true); state (off | waiting | acquiring | locked, watched);
                         error (µs, watched); trim (ppm, advanced, watched)
   gpio                  read-only, advanced
+/layers                 *(later, §5.5)* on (p); list of layers (p): on, frequency, phase, pulse; sync/; applied/
 /spinner                label "Rotation", ui.icon motor
   running (p)           bool, watched
   state                 stopped | absent | settling | running | stopping | halted, watched
@@ -157,6 +162,7 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 | Diagnostics for an absent chip: failed connects counted, the last reason (no reply, echo only, bad CRC, wrong version) | TesserMotion | `/driver/status` | done, 9d4cc2e: every failed transfer counted, `status/lastError` |
 | A precise LEDC output (ballet-photophonique's `plan()` and `pwm_esp.cpp`, copied here before), with a phase *(later)*. | TesserKIT | the strobe (§5.1); shared with ballet-photophonique | done, TesserKIT 2536928 (pinned at e08bf49; `tesserkit/pwm.h`: `pwm::plan(chip, …)`, `Pwm`, `espPwm()`, `PwmOutput`); the strobe is on it, the copy removed. As asked: `plan()` per chip, a `Pwm` platform interface with a fake, an output class (frequency, duty, resolution, on; applied timing, counts, pulse), no tree; LEDC timers from the bottom up; the phase *(later)* |
 | Where an LEDC output is in its period (its counter and the local clock read together); a trim of its divider in whole steps from the plan, the counter running on, the planned timing still readable; its period restarted at a local instant (the first lock). Sent 2026-10-21 to tesserkit-f1, with Leo's go-ahead. | TesserKIT | the sync (§5.4) | done, TesserKIT bea95dc (pinned at 2ffeb0e, on NowTP afc3e14): `PwmOutput::sample()`, `setTrim()`, `trim()`, `planned()`, `restartAt()` (a GPTimer alarm, 200 µs lead at least). On a board (§10.8): the restart's latency well under 100 µs, trims without a jump |
+| A pulse-train output on one pin: several trains (period, phase, pulse each) whose union drives it, their edges at instants of a time base the application gives (local clock to network time, offset and rate), from a GPTimer alarm in IRAM; a pulse never cut or stretched by a change, an off edge never skipped; lateness counted; `PwmOutput::end()` so the pin can change hands. Asked 2026-10-21 of tesserkit-b9, with Leo's go-ahead. `PwmOutput` stays as it is. | TesserKIT | the layers (§5.5) | asked |
 
 ## 10. Testing
 
@@ -177,6 +183,7 @@ A gap goes to the lowest layer, asked of its agent; no workarounds here. Sent wi
 | 1 *(host-tested)* | Strobe, spinner, trees, first page; Wi-Fi, NowTP, updates | Host tests; the firmware on the board: the strobe measured, the sculpture turning, a setting written to another Fluante under `/peers` |
 | 2 | Releases and the launcher on GitHub Pages (`.github/workflows/release.yml`, `pages/`) once the repository is on GitHub | A release installed from `/sys/firmware/github` |
 | 3 *(on the boards)* | Phase-synchronized strobes on NowTP's shared clock (§5.4, §9): a restart of the period at the first lock, then the period steered slowly (the LEDC's fractional divider, the counter running on) toward flashes at whole periods of network time, so single bad rounds are filtered rather than followed | Two Fluantes' strobes within 100 µs of each other on a scope, median; a GPIO edge between two units (nowtp-9f offers the firmware) |
+| 4 | Layers (§5.5): several strobes, each its own frequency, phase and pulse, on the one output, locked to network time, on TesserKIT's pulse-train output (§9) | Two layers on a scope, their union at the frequencies and phases asked; two Fluantes' layers within 100 µs |
 
 ## 12. Open questions
 
