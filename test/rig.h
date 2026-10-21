@@ -50,6 +50,22 @@ struct FakePwm : tesserkit::Pwm {
         counts = c;
         duties++;
     }
+    // The counter and the local clock, as a test sets them.
+    bool sampleOk = true;
+    uint32_t count = 0;
+    int64_t localUs = 0;
+    bool sample(int, uint32_t& c, int64_t& l) override {
+        c = count;
+        l = localUs;
+        return sampleOk;
+    }
+    int restarts = 0;
+    int64_t restartUs = 0;
+    bool restartAt(int, int64_t l) override {
+        restarts++;
+        restartUs = l;
+        return true;
+    }
 };
 
 struct Rig {

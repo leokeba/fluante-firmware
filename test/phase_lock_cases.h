@@ -247,3 +247,56 @@ TEST(phase_lock_due_once_a_second) {
     CHECK(wrap.due(0xFFFFFF00u));
     CHECK(wrap.due(0xFFFFFF00u + PhaseLock::kIntervalMs));
 }
+
+TEST(strobe_sync_samples_and_trims) {
+    FakePwm pwm;
+    Strobe s(pwm, kStrobePin);
+    int64_t offset = 1000000;
+    bool synced = false;
+    Strobe::NetworkOffset clock = [&](int64_t& o) {
+        o = offset;
+        return synced;
+    };
+    // Before begin(): nothing to sample.
+    s.sync(0, clock);
+    CHECK(s.lock().state() == PhaseLock::State::Waiting);
+    CHECK(s.begin());
+    // No network time yet.
+    s.sync(1000, clock);
+    CHECK(s.lock().state() == PhaseLock::State::Waiting);
+    CHECK_EQ(pwm.restarts, 0);
+    // The period began 5 ms after a network boundary: a restart at the
+    // first boundary 30 ms on, in local time.
+    synced = true;
+    double period = 1e6 / s.planned().frequency;
+    double begunNet = 100 * period + 5000;
+    pwm.count = 1000;
+    double localNow = begunNet - static_cast<double>(offset) + (1000 + 0.5) * s.timing().stepUs();
+    pwm.localUs = llround(localNow);
+    s.sync(2000, clock);
+    CHECK_EQ(pwm.restarts, 1);
+    double target = (floor((localNow + offset + 30000) / period) + 1) * period;
+    CHECK(near(static_cast<double>(pwm.restartUs), target - static_cast<double>(offset), 1));
+    CHECK(s.lock().state() == PhaseLock::State::Acquiring);
+    // Not due again within the second.
+    s.sync(2500, clock);
+    CHECK_EQ(pwm.restarts, 1);
+
+    // Steering: the lock's trim reaches the timer, the plan kept.
+    tesserkit::pwm::Timing planned = s.planned();
+    pwm.localUs = llround(target - static_cast<double>(offset)) + 1000000;
+    pwm.count = static_cast<uint32_t>(fmod(1e6 - 500, period) / s.timing().stepUs());  // 500 µs late
+    s.sync(3000, clock);
+    CHECK(s.lock().trim() < 0);
+    s.sync(3020, clock);
+    CHECK(pwm.timed.divider < planned.divider);
+    CHECK(s.planned() == planned);
+    CHECK(s.timing().divider == pwm.timed.divider);
+
+    // Off: untrimmed.
+    s.lock().setEnabled(false);
+    s.sync(3040, clock);
+    CHECK_EQ(pwm.timed.divider, planned.divider);
+    s.sync(5000, clock);
+    CHECK_EQ(pwm.restarts, 1);
+}

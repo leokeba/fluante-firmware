@@ -44,6 +44,14 @@ fluante::Spinner spinner(driver);
 fluante::Strobe strobe(tesserkit::espPwm(), board::kStrobe);
 fluante::Inrush inrush;
 
+// Network time minus local time, once NowTP has synchronized (section 5.4).
+bool networkOffset(int64_t& offsetUs) {
+    if (!espNow.timeSynced()) return false;
+    uint64_t network = espNow.networkTimeUs();
+    offsetUs = static_cast<int64_t>(network) - espNow.localTimeUs(network);
+    return true;
+}
+
 }  // namespace
 
 extern "C" void app_main() {
@@ -92,16 +100,18 @@ extern "C" void app_main() {
     dev.onState([](tesserkit::State s) {
         if (s == tesserkit::State::Updating) motion.stopAll();
     });
-    // The strobe's duty waiting for the end of a period, in TesserKIT's task
-    // under the API lock, as its setters are. Once the capacitor has charged,
-    // its resistor bypassed and the strobe begun: only at boot, so turning it
-    // on and off later is immediate.
+    // The strobe's duty waiting for the end of a period, and its lock to
+    // network time, in TesserKIT's task under the API lock, as its setters
+    // are. Once the capacitor has charged, its resistor bypassed and the
+    // strobe begun: only at boot, so turning it on and off later is immediate.
     dev.onTick([&api](uint32_t nowMs) {
+        static const fluante::Strobe::NetworkOffset offset = networkOffset;
         bool charged = inrush.update(nowMs);
         if (charged) defaultGpio().set(board::kInrushBypass, true);
         tesser::Lock lock(api);
         if (charged) strobe.begin();
         strobe.poll();
+        strobe.sync(nowMs, offset);
     });
 
     dev.cors("https://leokeba.github.io");  // the launchers (its own, TesserKIT's), reaching it by its address

@@ -7,6 +7,8 @@
 
 #include <stdint.h>
 
+#include <functional>
+
 #include "fluante/phase_lock.h"
 #include "tesserkit/pwm.h"
 
@@ -46,6 +48,8 @@ public:
 
     // What the timer runs (zeros before begin()).
     const tesserkit::pwm::Timing& timing() const { return out_.timing(); }
+    // The same untrimmed: the same on every Fluante asked this frequency.
+    const tesserkit::pwm::Timing& planned() const { return out_.planned(); }
     uint32_t counts() const { return out_.counts(); }
     // The flash's length as applied, in µs (0 while off).
     double pulseUs() const { return out_.pulseUs(); }
@@ -54,6 +58,11 @@ public:
     // Its lock to network time (section 5.4).
     PhaseLock& lock() { return lock_; }
     const PhaseLock& lock() const { return lock_; }
+    // Network time minus local time (esp_timer's), false while there is none.
+    using NetworkOffset = std::function<bool(int64_t& offsetUs)>;
+    // Every tick, under the API lock: the lock's trim for the tick, and once
+    // a second its sample of the timer against network time.
+    void sync(uint32_t nowMs, const NetworkOffset& offset);
 
     // Applies a duty waiting for the end of its period; often, under the API
     // lock.

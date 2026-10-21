@@ -3,6 +3,7 @@
 set(FLUANTE_SRCS
     src/fluante/phase_lock.cpp
     src/fluante/spinner.cpp
+    src/fluante/strobe.cpp
     src/fluante/tree.cpp
     src/fluante/views.cpp)
 

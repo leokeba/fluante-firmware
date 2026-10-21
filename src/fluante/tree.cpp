@@ -52,7 +52,7 @@ void describe(Object& o, Strobe& s) {
         .watch()
         .doc("When the strobe's period began, after the network's: positive when late");
     sync.value("trim", [&s, &lock] {
-            uint32_t d = s.timing().divider;
+            uint32_t d = s.planned().divider;
             return d ? lock.trim() / static_cast<double>(d) * 1e6 : 0.0;
         })
         .unit("ppm")
