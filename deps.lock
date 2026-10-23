@@ -5,8 +5,8 @@
 # own deps.lock for the ones it shares. Update it with scripts/pin.sh, after
 # the siblings' commits are pushed, and commit it with the change that needs
 # them.
-leokeba/TesserAPI@4d19b8235c05ba9ac3d72b7c8929a79fd5036260
-leokeba/TesserUI@e2011f90d2fa67f3756035faad04de1a59c3b0ae
-leokeba/NowTP@8d32095a8b5ada32c697ebd281400e396127312e
-leokeba/TesserKIT@2ffeb0e2696286dfb039ca263205e056001e4d11
+leokeba/TesserAPI@fd077c5e5f698cebcb09c74affdb7a3b257eb838
+leokeba/TesserUI@9141685a53e2e6576eb1d9c7435a8c404e2b9f1c
+leokeba/NowTP@284a2db6061583987c695034536915461712609c
+leokeba/TesserKIT@e9ef2f32825b7e3a2498a3323cf74c8b49c9d328
 leokeba/TesserMotion@8a4f137a34cb69c024f7c6dae1a3cd2a8f1e9442
